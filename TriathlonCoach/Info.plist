@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>NSHealthShareUsageDescription</key>
+	<string>Приложение читает тренировки из HealthKit для отображения истории и статистики.</string>
+	<key>NSHealthUpdateUsageDescription</key>
+	<string>Приложение сохраняет планы тренировок на Apple Watch через WorkoutKit.</string>
+	<key>NSHealthWorkoutKitUsageDescription</key>
+	<string>Приложение создаёт структурированные планы тренировок с пульсовыми зонами для Apple Watch.</string>
+	<key>UILaunchScreen</key>
+	<dict/>
+</dict>
+</plist>

@@ -1,0 +1,844 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Инструкция Xcode — TriathlonCoach</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f5f5f0;
+    --card: #ffffff;
+    --border: #e2e2dc;
+    --text: #1a1a1a;
+    --muted: #6b6b6b;
+    --blue: #0066cc;
+    --green: #1a8a4a;
+    --orange: #b45309;
+    --red: #c0392b;
+    --code-bg: #1e1e2e;
+    --code-text: #cdd6f4;
+    --step-bg: #0066cc;
+    --note-bg: #fff8e1;
+    --note-border: #f59e0b;
+    --warn-bg: #fef3f2;
+    --warn-border: #ef4444;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Inter', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    font-size: 15px;
+  }
+  .header {
+    background: #1a1a2e;
+    color: white;
+    padding: 40px 32px 32px;
+    border-bottom: 3px solid var(--blue);
+  }
+  .header-label {
+    font-size: 11px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: rgba(255,255,255,0.4);
+    margin-bottom: 8px;
+  }
+  .header h1 {
+    font-size: 32px;
+    font-weight: 700;
+    line-height: 1.2;
+    margin-bottom: 10px;
+  }
+  .header h1 span { color: #4a9eff; }
+  .header-sub {
+    color: rgba(255,255,255,0.5);
+    font-size: 14px;
+  }
+  .container { max-width: 800px; margin: 0 auto; padding: 32px 24px 64px; }
+
+  /* Requirements */
+  .requirements {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+    margin-bottom: 40px;
+  }
+  .req-card {
+    background: white;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px;
+    text-align: center;
+  }
+  .req-icon { font-size: 28px; margin-bottom: 8px; }
+  .req-name { font-weight: 600; font-size: 14px; margin-bottom: 2px; }
+  .req-ver { font-size: 12px; color: var(--muted); }
+
+  /* Section title */
+  .section-title {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 36px 0 16px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  /* Step */
+  .step {
+    background: white;
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    margin-bottom: 16px;
+    overflow: hidden;
+  }
+  .step-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    padding: 20px 20px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .step-num {
+    width: 32px;
+    height: 32px;
+    background: var(--step-bg);
+    color: white;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 14px;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+  .step-title { font-size: 18px; font-weight: 700; line-height: 1.3; }
+  .step-sub { font-size: 13px; color: var(--muted); margin-top: 3px; }
+  .step-body { padding: 16px 20px; }
+
+  /* UI mockup */
+  .ui-mock {
+    background: #f0f0f5;
+    border: 1px solid #d0d0da;
+    border-radius: 10px;
+    padding: 14px 16px;
+    margin: 12px 0;
+    font-size: 13px;
+  }
+  .ui-mock-title {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 10px;
+  }
+  .ui-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    border-radius: 6px;
+    margin-bottom: 4px;
+    font-size: 13px;
+  }
+  .ui-row.active { background: #0066cc; color: white; }
+  .ui-row.indent { padding-left: 28px; }
+  .ui-row.indent2 { padding-left: 46px; }
+  .ui-arrow { color: var(--muted); font-size: 10px; }
+  .ui-field {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    padding: 8px 0;
+    border-bottom: 1px solid #e0e0e8;
+  }
+  .ui-field:last-child { border-bottom: none; }
+  .ui-field-label { color: var(--muted); font-size: 13px; width: 140px; flex-shrink: 0; }
+  .ui-field-value {
+    background: white;
+    border: 1px solid #c0c0cc;
+    border-radius: 5px;
+    padding: 4px 10px;
+    font-size: 13px;
+    flex: 1;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+  }
+  .ui-check { display: flex; align-items: center; gap: 10px; margin: 6px 0; }
+  .checkbox {
+    width: 16px; height: 16px;
+    background: #0066cc;
+    border-radius: 3px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 11px;
+    flex-shrink: 0;
+  }
+  .checkbox.empty { background: white; border: 1.5px solid #999; }
+
+  /* Code */
+  .code {
+    background: var(--code-bg);
+    border-radius: 10px;
+    padding: 14px 18px;
+    margin: 10px 0;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    color: var(--code-text);
+    overflow-x: auto;
+    white-space: pre-wrap;
+  }
+  .code .comment { color: #585b70; }
+  .code .string { color: #a6e3a1; }
+  .code .keyword { color: #89b4fa; }
+
+  /* Note / Warning */
+  .note {
+    background: var(--note-bg);
+    border-left: 3px solid var(--note-border);
+    border-radius: 0 8px 8px 0;
+    padding: 12px 16px;
+    margin: 12px 0;
+    font-size: 13px;
+  }
+  .note strong { color: var(--orange); }
+  .warn {
+    background: var(--warn-bg);
+    border-left: 3px solid var(--warn-border);
+    border-radius: 0 8px 8px 0;
+    padding: 12px 16px;
+    margin: 12px 0;
+    font-size: 13px;
+  }
+  .warn strong { color: var(--red); }
+
+  /* Path breadcrumb */
+  .path {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: #f0f0f5;
+    border: 1px solid #d8d8e0;
+    border-radius: 6px;
+    padding: 4px 10px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    flex-wrap: wrap;
+  }
+  .path-sep { color: var(--muted); }
+
+  /* Tab bar mock */
+  .xcode-tabs {
+    display: flex;
+    gap: 2px;
+    background: #d0d0d8;
+    border-radius: 8px 8px 0 0;
+    padding: 4px 4px 0;
+    margin-top: 12px;
+  }
+  .xcode-tab {
+    padding: 6px 16px;
+    font-size: 13px;
+    background: #e8e8f0;
+    border-radius: 6px 6px 0 0;
+    cursor: default;
+    color: var(--muted);
+  }
+  .xcode-tab.active { background: white; color: var(--text); font-weight: 500; }
+  .xcode-panel {
+    background: white;
+    border: 1px solid #d0d0d8;
+    border-radius: 0 0 8px 8px;
+    padding: 16px;
+    font-size: 13px;
+  }
+
+  /* Result block */
+  .result {
+    background: #f0fdf4;
+    border: 1px solid #86efac;
+    border-radius: 10px;
+    padding: 14px 18px;
+    margin: 12px 0;
+    font-size: 13px;
+  }
+  .result strong { color: var(--green); }
+
+  /* Flow diagram */
+  .flow {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin: 12px 0;
+  }
+  .flow-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 14px;
+    background: #f5f5fa;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 13px;
+  }
+  .flow-item.highlight { background: #eff6ff; border-color: #93c5fd; }
+  .flow-arrow { text-align: center; color: var(--muted); font-size: 18px; }
+
+  p { margin: 8px 0; }
+  b { font-weight: 600; }
+  .mt { margin-top: 14px; }
+  .mb { margin-bottom: 6px; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-label">Пошаговая инструкция</div>
+  <h1>Установка <span>TriathlonCoach</span><br>через Xcode</h1>
+  <div class="header-sub">Без опыта разработки · ~20 минут · один раз</div>
+</div>
+
+<div class="container">
+
+  <div class="section-title">Что нужно</div>
+  <div class="requirements">
+    <div class="req-card">
+      <div class="req-icon">💻</div>
+      <div class="req-name">Mac</div>
+      <div class="req-ver">macOS 14 Sonoma+</div>
+    </div>
+    <div class="req-card">
+      <div class="req-icon">🛠</div>
+      <div class="req-name">Xcode 15</div>
+      <div class="req-ver">Бесплатно в App Store</div>
+    </div>
+    <div class="req-card">
+      <div class="req-icon">📱</div>
+      <div class="req-name">iPhone</div>
+      <div class="req-ver">iOS 17+</div>
+    </div>
+    <div class="req-card">
+      <div class="req-icon">⌚</div>
+      <div class="req-name">Apple Watch</div>
+      <div class="req-ver">watchOS 10+</div>
+    </div>
+  </div>
+
+
+  <!-- ═══ ЧАСТЬ 1: СОЗДАНИЕ ПРОЕКТА ═══ -->
+
+  <div class="section-title">Часть 1 — Создать проект в Xcode</div>
+
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num">1</div>
+      <div>
+        <div class="step-title">Скачай и открой Xcode</div>
+        <div class="step-sub">App Store → Xcode (Apple) → Загрузить. Занимает ~12 ГБ.</div>
+      </div>
+    </div>
+    <div class="step-body">
+      <p>После установки открой Xcode. Появится окно «Welcome to Xcode».</p>
+      <p class="mt"><b>Нажми:</b> <span class="path"><span>Create New Project…</span></span></p>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num">2</div>
+      <div>
+        <div class="step-title">Выбери шаблон</div>
+        <div class="step-sub">В диалоге выбора шаблона</div>
+      </div>
+    </div>
+    <div class="step-body">
+      <div class="ui-mock">
+        <div class="ui-mock-title">Choose a template for your new project</div>
+        <div class="ui-row">iOS &nbsp;·&nbsp; watchOS &nbsp;·&nbsp; macOS &nbsp;·&nbsp; …</div>
+        <div class="ui-row active">📱 iOS ← выбери эту вкладку</div>
+        <hr style="margin: 8px 0; border-color: #d0d0d8;">
+        <div class="ui-row active">☑ App ← выбери этот шаблон</div>
+        <div class="ui-row">Game</div>
+        <div class="ui-row">Augmented Reality App</div>
+      </div>
+      <p class="mt"><b>Нажми Next</b></p>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num">3</div>
+      <div>
+        <div class="step-title">Заполни настройки проекта</div>
+        <div class="step-sub">Самый важный экран — внимательно</div>
+      </div>
+    </div>
+    <div class="step-body">
+      <div class="ui-mock">
+        <div class="ui-mock-title">Choose options for your new project</div>
+        <div class="ui-field">
+          <span class="ui-field-label">Product Name</span>
+          <span class="ui-field-value">TriathlonCoach</span>
+        </div>
+        <div class="ui-field">
+          <span class="ui-field-label">Team</span>
+          <span class="ui-field-value">Твоё имя (Personal Team) ← выбери из списка</span>
+        </div>
+        <div class="ui-field">
+          <span class="ui-field-label">Organization Identifier</span>
+          <span class="ui-field-value">com.pavel</span>
+        </div>
+        <div class="ui-field">
+          <span class="ui-field-label">Bundle Identifier</span>
+          <span class="ui-field-value">com.pavel.TriathlonCoach ← генерируется автоматически</span>
+        </div>
+        <div class="ui-field">
+          <span class="ui-field-label">Interface</span>
+          <span class="ui-field-value">SwiftUI ← обязательно!</span>
+        </div>
+        <div class="ui-field">
+          <span class="ui-field-label">Language</span>
+          <span class="ui-field-value">Swift</span>
+        </div>
+      </div>
+      <div class="note"><strong>💡 Team</strong> — если список пустой, нажми «Add Account…» и войди своим Apple ID. Бесплатный Apple ID достаточно для установки на свой телефон.</div>
+      <p class="mt"><b>Нажми Next</b> → выбери папку где сохранить → <b>Create</b></p>
+    </div>
+  </div>
+
+
+  <!-- ═══ ЧАСТЬ 2: СТРУКТУРА XCODE ═══ -->
+
+  <div class="section-title">Часть 2 — Разобраться в интерфейсе Xcode</div>
+
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num">4</div>
+      <div>
+        <div class="step-title">Что ты видишь в Xcode</div>
+        <div class="step-sub">Ориентация по зонам экрана</div>
+      </div>
+    </div>
+    <div class="step-body">
+      <div class="ui-mock">
+        <div class="ui-mock-title">Окно Xcode — 3 зоны</div>
+        <div style="display: grid; grid-template-columns: 180px 1fr 140px; gap: 6px; font-size: 12px;">
+          <div style="background:#e8f0fe; border-radius:6px; padding:10px; min-height:120px;">
+            <b>Левая панель</b><br>
+            Navigator (навигатор)<br><br>
+            Здесь список файлов проекта. Как проводник/Finder.
+          </div>
+          <div style="background:#f0f5e8; border-radius:6px; padding:10px; min-height:120px;">
+            <b>Центр</b><br>
+            Editor (редактор)<br><br>
+            Здесь открываются файлы кода. Или настройки если нажать на корень проекта.
+          </div>
+          <div style="background:#fef8e8; border-radius:6px; padding:10px; min-height:120px;">
+            <b>Правая панель</b><br>
+            Inspector<br><br>
+            Детали выбранного файла.
+          </div>
+        </div>
+      </div>
+
+      <p class="mt"><b>Левая панель — самое важное.</b> Вверху папки, в самом верху — голубой значок с именем проекта. Это <b>корень проекта</b>. Нажми на него — откроется главное окно настроек.</p>
+    </div>
+  </div>
+
+
+  <!-- ═══ ЧАСТЬ 3: КОПИРОВАНИЕ ФАЙЛОВ ═══ -->
+
+  <div class="section-title">Часть 3 — Добавить файлы приложения</div>
+
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num">5</div>
+      <div>
+        <div class="step-title">Удали файлы-заглушки Xcode</div>
+        <div class="step-sub">Xcode создаёт пустые файлы — они нам не нужны</div>
+      </div>
+    </div>
+    <div class="step-body">
+      <p>В левой панели ты увидишь:</p>
+      <div class="ui-mock">
+        <div class="ui-row">📁 TriathlonCoach (папка)</div>
+        <div class="ui-row indent">📄 TriathlonCoachApp.swift ← удали</div>
+        <div class="ui-row indent">📄 ContentView.swift ← удали</div>
+        <div class="ui-row indent">📄 Assets.xcassets ← оставь</div>
+      </div>
+      <p class="mt">Выдели оба файла (Cmd+клик), правый клик → <b>Delete</b> → <b>Move to Trash</b></p>
+      <div class="warn"><strong>⚠️</strong> Выбирай «Move to Trash», НЕ «Remove Reference» — иначе файлы останутся на диске.</div>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num">6</div>
+      <div>
+        <div class="step-title">Добавь файлы TriathlonCoach</div>
+        <div class="step-sub">Перетащи все .swift файлы в проект</div>
+      </div>
+    </div>
+    <div class="step-body">
+      <p>Открой папку <code>TriathlonCoach/TriathlonCoach/</code> из архива в Finder.</p>
+      <p class="mt">Там 7 файлов .swift:</p>
+      <div class="ui-mock">
+        <div class="ui-row">📄 TriathlonCoachApp.swift</div>
+        <div class="ui-row">📄 Models.swift</div>
+        <div class="ui-row">📄 WorkoutKitManager.swift</div>
+        <div class="ui-row">📄 WorkoutLoader.swift</div>
+        <div class="ui-row">📄 ContentView.swift</div>
+        <div class="ui-row">📄 WorkoutRow.swift</div>
+        <div class="ui-row">📄 WorkoutDetailView.swift</div>
+      </div>
+      <p class="mt"><b>Выдели все 7 файлов</b> (Cmd+A) → перетащи в левую панель Xcode на папку <b>TriathlonCoach</b></p>
+
+      <div class="ui-mock" style="margin-top:12px;">
+        <div class="ui-mock-title">Появится диалог — настрой так:</div>
+        <div class="ui-check"><div class="checkbox">✓</div> Copy items if needed ← ОБЯЗАТЕЛЬНО поставь галку</div>
+        <div class="ui-check"><div class="checkbox">✓</div> Create groups</div>
+        <div class="ui-check"><div class="checkbox">✓</div> Add to targets: TriathlonCoach ← должна быть галка</div>
+      </div>
+      <p class="mt"><b>Нажми Finish</b></p>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num">7</div>
+      <div>
+        <div class="step-title">Обнови Info.plist</div>
+        <div class="step-sub">Права доступа к HealthKit</div>
+      </div>
+    </div>
+    <div class="step-body">
+      <p>В левой панели найди файл <b>Info.plist</b>. Кликни на него.</p>
+      <p class="mt">Нужно добавить 2 строки. Нажми <b>+</b> у любой существующей строки:</p>
+
+      <div class="ui-mock">
+        <div class="ui-mock-title">Добавь эти ключи через "+" кнопку</div>
+        <div class="ui-field">
+          <span class="ui-field-label">Key</span>
+          <span class="ui-field-value">NSHealthShareUsageDescription</span>
+        </div>
+        <div class="ui-field">
+          <span class="ui-field-label">Value</span>
+          <span class="ui-field-value">Для анализа тренировок с Apple Watch</span>
+        </div>
+        <div style="height:8px;"></div>
+        <div class="ui-field">
+          <span class="ui-field-label">Key</span>
+          <span class="ui-field-value">NSHealthUpdateUsageDescription</span>
+        </div>
+        <div class="ui-field">
+          <span class="ui-field-label">Value</span>
+          <span class="ui-field-value">Для сохранения тренировочного плана на Apple Watch</span>
+        </div>
+      </div>
+      <div class="note"><strong>💡</strong> Если Info.plist не отображается как таблица, кликни правой кнопкой → Open As → Property List</div>
+    </div>
+  </div>
+
+
+  <!-- ═══ ЧАСТЬ 4: TARGET ═══ -->
+
+  <div class="section-title">Часть 4 — Target и Capabilities (самое важное)</div>
+
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num">8</div>
+      <div>
+        <div class="step-title">Что такое Target</div>
+        <div class="step-sub">Главная концепция которую нужно понять</div>
+      </div>
+    </div>
+    <div class="step-body">
+      <p><b>Target</b> — это «конечный продукт» который Xcode собирает из твоих файлов. Думай об этом как о «профиле сборки»: какие файлы включить, для какого устройства, какие разрешения нужны.</p>
+
+      <div class="flow">
+        <div class="flow-item highlight">📁 Файлы кода (.swift) + ресурсы</div>
+        <div class="flow-arrow">↓ Target собирает всё это в:</div>
+        <div class="flow-item highlight">📱 TriathlonCoach.app → устанавливается на iPhone</div>
+      </div>
+
+      <p>У нас будет <b>один Target</b> — <code>TriathlonCoach</code>. Он же отвечает за синхронизацию с Watch через WorkoutKit.</p>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num">9</div>
+      <div>
+        <div class="step-title">Открой настройки Target</div>
+        <div class="step-sub">Здесь живут все важные настройки</div>
+      </div>
+    </div>
+    <div class="step-body">
+      <p>В левой панели нажми на <b>самый верхний элемент</b> — голубой значок с именем <b>TriathlonCoach</b>.</p>
+
+      <div class="ui-mock">
+        <div class="ui-row active">🔷 TriathlonCoach ← кликни сюда (корень проекта)</div>
+        <div class="ui-row indent">📁 TriathlonCoach</div>
+        <div class="ui-row indent2">📄 TriathlonCoachApp.swift</div>
+        <div class="ui-row indent2">📄 ContentView.swift</div>
+        <div class="ui-row indent2">…</div>
+      </div>
+
+      <p class="mt">В центре откроется экран с двумя колонками:</p>
+      <div class="ui-mock">
+        <div style="display: grid; grid-template-columns: 160px 1fr; gap: 8px; font-size: 13px;">
+          <div style="background: #e8e8f0; border-radius: 6px; padding: 10px;">
+            <b>PROJECT</b><br>
+            <div style="color: #999; margin: 4px 0">TriathlonCoach</div>
+            <br>
+            <b>TARGETS</b><br>
+            <div style="background: #0066cc; color: white; border-radius: 4px; padding: 4px 8px; margin-top: 4px; font-size: 12px;">
+              📱 TriathlonCoach ← нажми здесь
+            </div>
+          </div>
+          <div style="background: #f5f5fa; border-radius: 6px; padding: 10px;">
+            Здесь появятся вкладки:<br><br>
+            <b>General · Signing · Capabilities · Info · Build Settings · …</b>
+          </div>
+        </div>
+      </div>
+
+      <div class="note"><strong>💡 TARGETS vs PROJECT</strong> — кликни именно на <b>TriathlonCoach</b> под словом TARGETS, не на PROJECT выше.</div>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num">10</div>
+      <div>
+        <div class="step-title">Вкладка General — проверь настройки</div>
+        <div class="step-sub">Основные параметры сборки</div>
+      </div>
+    </div>
+    <div class="step-body">
+      <div class="xcode-tabs">
+        <div class="xcode-tab active">General</div>
+        <div class="xcode-tab">Signing & Capabilities</div>
+        <div class="xcode-tab">Build Settings</div>
+      </div>
+      <div class="xcode-panel">
+        <div class="ui-field">
+          <span class="ui-field-label">Display Name</span>
+          <span class="ui-field-value">TriathlonCoach</span>
+        </div>
+        <div class="ui-field">
+          <span class="ui-field-label">Bundle Identifier</span>
+          <span class="ui-field-value">com.pavel.TriathlonCoach</span>
+        </div>
+        <div class="ui-field">
+          <span class="ui-field-label">Version</span>
+          <span class="ui-field-value">1.0</span>
+        </div>
+        <div class="ui-field">
+          <span class="ui-field-label">iOS Deployment Target</span>
+          <span class="ui-field-value" style="color:#c0392b; font-weight:600">17.0 ← минимум!</span>
+        </div>
+      </div>
+      <div class="warn"><strong>⚠️</strong> iOS Deployment Target должен быть <b>17.0 или выше</b> — иначе WorkoutKit недоступен. Найди это поле, кликни → выбери 17.0.</div>
+
+      <p class="mt">Листай вниз до раздела <b>Frameworks, Libraries, and Embedded Content</b>:</p>
+      <div class="ui-mock">
+        <div class="ui-mock-title">Frameworks, Libraries, and Embedded Content</div>
+        <div class="ui-row">✅ WorkoutKit.framework — нужно добавить</div>
+        <div class="ui-row" style="color: #0066cc; cursor: pointer;">+ Нажми "+" → появится поиск → напиши WorkoutKit → Add</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num">11</div>
+      <div>
+        <div class="step-title">Вкладка Signing & Capabilities</div>
+        <div class="step-sub">Подпись приложения и разрешения — самое важное</div>
+      </div>
+    </div>
+    <div class="step-body">
+      <div class="xcode-tabs">
+        <div class="xcode-tab">General</div>
+        <div class="xcode-tab active">Signing & Capabilities</div>
+        <div class="xcode-tab">Build Settings</div>
+      </div>
+      <div class="xcode-panel">
+        <p class="mb"><b>Верхняя секция — Signing:</b></p>
+        <div class="ui-check"><div class="checkbox">✓</div> Automatically manage signing — поставь галку</div>
+        <div class="ui-field" style="margin-top:10px">
+          <span class="ui-field-label">Team</span>
+          <span class="ui-field-value">Твоё имя (Personal Team)</span>
+        </div>
+        <div class="ui-field">
+          <span class="ui-field-label">Bundle Identifier</span>
+          <span class="ui-field-value">com.pavel.TriathlonCoach</span>
+        </div>
+      </div>
+
+      <p class="mt"><b>Добавь Capability — HealthKit:</b></p>
+      <div class="ui-mock">
+        <div class="ui-row" style="color: #0066cc;">+ Capability (кнопка вверху слева) → напиши HealthKit → двойной клик</div>
+        <div class="ui-row active">✅ HealthKit — добавился</div>
+      </div>
+
+      <div class="note"><strong>💡</strong> После добавления HealthKit появится блок с галками. Ничего дополнительно не включай — базовых прав достаточно.</div>
+
+      <div class="result"><strong>✓ Готово!</strong> Signing настроен, HealthKit добавлен. WorkoutKit работает поверх HealthKit — отдельно добавлять его не нужно.</div>
+    </div>
+  </div>
+
+
+  <!-- ═══ ЧАСТЬ 5: ЗАПУСК ═══ -->
+
+  <div class="section-title">Часть 5 — Запуск на iPhone</div>
+
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num">12</div>
+      <div>
+        <div class="step-title">Подключи iPhone к Mac</div>
+        <div class="step-sub">Кабелем USB-C или через Wi-Fi</div>
+      </div>
+    </div>
+    <div class="step-body">
+      <p>Подключи iPhone кабелем. На iPhone появится диалог «Доверять этому компьютеру?» — нажми <b>Доверять</b> и введи пароль iPhone.</p>
+
+      <p class="mt">В Xcode вверху — строка с выбором устройства. Нажми на неё:</p>
+      <div class="ui-mock">
+        <div class="ui-row active">📱 iPhone Павла (iOS 17.x) ← выбери свой iPhone</div>
+        <div class="ui-row">iPhone 15 Pro (симулятор)</div>
+        <div class="ui-row">iPhone 15 (симулятор)</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num">13</div>
+      <div>
+        <div class="step-title">Нажми Run (▶)</div>
+        <div class="step-sub">Xcode соберёт и установит приложение</div>
+      </div>
+    </div>
+    <div class="step-body">
+      <p>Нажми большую кнопку <b>▶</b> вверху слева (или <b>Cmd + R</b>).</p>
+      <p class="mt">Xcode начнёт сборку — внизу видна полоса прогресса. Займёт 30–60 секунд.</p>
+
+      <div class="warn"><strong>⚠️ Возможная ошибка:</strong> «Untrusted Developer» на iPhone<br><br>
+      Если iPhone показывает это сообщение:<br>
+      <b>Настройки → Основные → VPN и управление устройством → Developer App → Твой Apple ID → Доверять</b><br><br>
+      После этого запусти приложение снова.</div>
+
+      <div class="result" style="margin-top:12px;"><strong>✓ Успех!</strong> На iPhone появится иконка TriathlonCoach. Открой — увидишь список тренировок предвахтовой недели.</div>
+    </div>
+  </div>
+
+
+  <!-- ═══ ЧАСТЬ 6: JSON ФАЙЛЫ ═══ -->
+
+  <div class="section-title">Часть 6 — Передать JSON тренировок на iPhone</div>
+
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num">14</div>
+      <div>
+        <div class="step-title">Передай JSON через AirDrop (самый простой способ)</div>
+      </div>
+    </div>
+    <div class="step-body">
+      <p>На Mac — открой папку с файлами тренировок:</p>
+      <div class="code"><span class="comment"># файлы лежат здесь:</span>
+pre_shift_week.json
+shift_week1.json</div>
+
+      <div class="flow">
+        <div class="flow-item">1. Правый клик на <b>pre_shift_week.json</b></div>
+        <div class="flow-arrow">↓</div>
+        <div class="flow-item">2. Поделиться → <b>AirDrop</b></div>
+        <div class="flow-arrow">↓</div>
+        <div class="flow-item">3. Выбери свой iPhone</div>
+        <div class="flow-arrow">↓</div>
+        <div class="flow-item highlight">4. На iPhone: принять → <b>Сохранить в «Файлы»</b></div>
+        <div class="flow-arrow">↓</div>
+        <div class="flow-item">5. В приложении TriathlonCoach нажми кнопку <b>↓</b> (импорт) вверху</div>
+        <div class="flow-arrow">↓</div>
+        <div class="flow-item highlight">6. Тренировки появились в списке ✓</div>
+      </div>
+
+      <p class="mt">Повтори то же самое для <b>shift_week1.json</b> (вахтовая неделя).</p>
+    </div>
+  </div>
+
+
+  <!-- ═══ ЧАСТЬ 7: ДОБАВЛЕНИЕ НА WATCH ═══ -->
+
+  <div class="section-title">Часть 7 — Добавить тренировки на Apple Watch</div>
+
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num">15</div>
+      <div>
+        <div class="step-title">Одна кнопка — и тренировки на часах</div>
+      </div>
+    </div>
+    <div class="step-body">
+      <div class="flow">
+        <div class="flow-item">1. Открой TriathlonCoach на iPhone</div>
+        <div class="flow-arrow">↓</div>
+        <div class="flow-item">2. Нажми кнопку <b>«Добавить все на Apple Watch»</b></div>
+        <div class="flow-arrow">↓</div>
+        <div class="flow-item">3. iPhone запросит доступ к HealthKit — нажми <b>Разрешить все</b></div>
+        <div class="flow-arrow">↓</div>
+        <div class="flow-item highlight">4. Тренировки автоматически появляются на Watch ✓</div>
+      </div>
+
+      <p class="mt"><b>На часах во время тренировки:</b></p>
+      <div class="ui-mock">
+        <div class="ui-row">⌚ приложение Тренировка</div>
+        <div class="ui-row indent">→ листай вниз</div>
+        <div class="ui-row indent active">→ Собственная тренировка → найди название</div>
+        <div class="ui-row indent">→ нажми — видишь отрезки с пульсом</div>
+        <div class="ui-row indent">→ вибрация при выходе из зоны</div>
+      </div>
+
+      <div class="result"><strong>🎉 Готово!</strong> Python генерирует план → JSON → iPhone приложение → один тап → тренировка на Watch с отрезками, целевым пульсом и вибрацией. Полная автоматизация.</div>
+    </div>
+  </div>
+
+  <div class="section-title">Если что-то пошло не так</div>
+
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num">?</div>
+      <div>
+        <div class="step-title">Частые ошибки и решения</div>
+      </div>
+    </div>
+    <div class="step-body">
+      <p><b>«No such module 'WorkoutKit'»</b><br>
+      → Вернись к шагу 10, проверь что WorkoutKit добавлен в Frameworks. Проверь что iOS Deployment Target = 17.0+</p>
+
+      <p class="mt"><b>«Signing certificate is not valid»</b><br>
+      → Xcode → Preferences → Accounts → удали и добавь Apple ID снова</p>
+
+      <p class="mt"><b>Приложение не устанавливается на iPhone</b><br>
+      → Настройки iPhone → Основные → VPN и управление устройством → найди свой Apple ID → Доверять</p>
+
+      <p class="mt"><b>Тренировки не видны на Watch</b><br>
+      → Watch должен быть рядом с iPhone и подключён по Bluetooth. Подожди 30 секунд после нажатия кнопки.</p>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,187 @@
+[
+  {
+    "title": "🧘 Отдых + мобильность",
+    "sport": "mobility",
+    "date": "2026-03-09T09:00:00",
+    "duration_min": 30,
+    "target_zone": "Z1",
+    "description": "Полный отдых от нагрузки.\n\n20 мин: лёгкая растяжка всего тела\n10 мин: МФР (пенный ролик) — квадрицепс, икры, IT-band\n\nЦель: максимально восстановиться перед отъездом на вахту.",
+    "intervals": [],
+    "tags": [
+      "recovery",
+      "pre-shift"
+    ],
+    "rpe_target": null,
+    "planned": true,
+    "completed": false,
+    "actual_avg_hr": null,
+    "actual_duration_min": null,
+    "notes_after": ""
+  },
+  {
+    "title": "🏃 Лёгкий бег Z1",
+    "sport": "run",
+    "date": "2026-03-10T08:00:00",
+    "duration_min": 40,
+    "target_zone": "Z1",
+    "description": "Лёгкий восстановительный бег.\n\nЦелевой пульс: 🟢 Z1 Восстановительная (0–119 уд/мин)\nТемп: очень комфортный, можно говорить полными предложениями\n\nСтруктура:\n  5 мин — разминка шагом/трусцой\n  30 мин — лёгкий бег, строго Z1\n  5 мин — заминка шагом\n\n⚠️ Если пульс уходит выше 119 — перейди на шаг.",
+    "intervals": [
+      {
+        "duration_min": 5,
+        "zone": "Z1",
+        "note": "Разминка — шаг/трусца"
+      },
+      {
+        "duration_min": 30,
+        "zone": "Z1",
+        "note": "Лёгкий бег Z1 < 119"
+      },
+      {
+        "duration_min": 5,
+        "zone": "Z1",
+        "note": "Заминка — шаг"
+      }
+    ],
+    "tags": [
+      "run",
+      "z1",
+      "pre-shift"
+    ],
+    "rpe_target": 4,
+    "planned": true,
+    "completed": false,
+    "actual_avg_hr": null,
+    "actual_duration_min": null,
+    "notes_after": ""
+  },
+  {
+    "title": "🚴 Вело Z1–Z2",
+    "sport": "bike",
+    "date": "2026-03-11T08:00:00",
+    "duration_min": 70,
+    "target_zone": "Z2",
+    "description": "Аэробная велотренировка — последняя перед вахтой.\n\nЦелевой пульс: 🟢 Z1 Восстановительная (0–119 уд/мин) / низкий 🔵 Z2 Аэробная база (120–145 уд/мин)\nДержи пульс в диапазоне 115–130, максимум 135.\n\nСтруктура:\n  10 мин — разминка Z1\n  50 мин — ровное усилие, пульс 120–130\n  10 мин — заминка Z1\n\n💡 Это базовая аэробная работа — никакого ускорения, никаких горок в полную силу. Наслаждайся последним выездом на улицу.",
+    "intervals": [
+      {
+        "duration_min": 10,
+        "zone": "Z1",
+        "note": "Разминка"
+      },
+      {
+        "duration_min": 50,
+        "zone": "Z2",
+        "note": "Аэробная база 120–130 уд/мин"
+      },
+      {
+        "duration_min": 10,
+        "zone": "Z1",
+        "note": "Заминка"
+      }
+    ],
+    "tags": [
+      "bike",
+      "z2",
+      "pre-shift"
+    ],
+    "rpe_target": 5,
+    "planned": true,
+    "completed": false,
+    "actual_avg_hr": null,
+    "actual_duration_min": null,
+    "notes_after": ""
+  },
+  {
+    "title": "🏃 Лёгкий бег Z1 (короткий)",
+    "sport": "run",
+    "date": "2026-03-12T08:00:00",
+    "duration_min": 35,
+    "target_zone": "Z1",
+    "description": "Короткий лёгкий бег — поддержание активности.\n\nЦелевой пульс: 🟢 Z1 Восстановительная (0–119 уд/мин)\n\nСтруктура:\n  5 мин — разминка шагом\n  25 мин — лёгкий бег Z1\n  5 мин — заминка + растяжка икр и квадрицепса\n\n⚠️ Короче среды специально — накапливаем свежесть к отъезду.",
+    "intervals": [
+      {
+        "duration_min": 5,
+        "zone": "Z1",
+        "note": "Разминка"
+      },
+      {
+        "duration_min": 25,
+        "zone": "Z1",
+        "note": "Лёгкий бег Z1"
+      },
+      {
+        "duration_min": 5,
+        "zone": "Z1",
+        "note": "Заминка + растяжка"
+      }
+    ],
+    "tags": [
+      "run",
+      "z1",
+      "pre-shift"
+    ],
+    "rpe_target": 3,
+    "planned": true,
+    "completed": false,
+    "actual_avg_hr": null,
+    "actual_duration_min": null,
+    "notes_after": ""
+  },
+  {
+    "title": "🧘 Отдых",
+    "sport": "rest",
+    "date": "2026-03-13T09:00:00",
+    "duration_min": 20,
+    "target_zone": "Z1",
+    "description": "Полный отдых.\n\nМожно: лёгкая прогулка 20–30 мин без пульсового контроля.\nФокус: сборы, питание, сон.",
+    "intervals": [],
+    "tags": [
+      "rest",
+      "pre-shift"
+    ],
+    "rpe_target": null,
+    "planned": true,
+    "completed": false,
+    "actual_avg_hr": null,
+    "actual_duration_min": null,
+    "notes_after": ""
+  },
+  {
+    "title": "🚶 По ощущениям — прогулка или Z1 бег",
+    "sport": "run",
+    "date": "2026-03-14T09:00:00",
+    "duration_min": 40,
+    "target_zone": "Z1",
+    "description": "Тренировка по самочувствию.\n\nВариант А (если тело свежее): лёгкий бег 35–40 мин Z1\nВариант Б (если есть усталость): прогулка 45–50 мин\n\nЦелевой пульс: 🟢 Z1 Восстановительная (0–119 уд/мин)\n\nСлушай тело — это последний день перед вахтой.",
+    "intervals": [],
+    "tags": [
+      "run",
+      "optional",
+      "pre-shift"
+    ],
+    "rpe_target": 3,
+    "planned": true,
+    "completed": false,
+    "actual_avg_hr": null,
+    "actual_duration_min": null,
+    "notes_after": ""
+  },
+  {
+    "title": "✈️ Отдых / Отъезд",
+    "sport": "rest",
+    "date": "2026-03-15T09:00:00",
+    "duration_min": 15,
+    "target_zone": "Z1",
+    "description": "Отъезд на вахту.\n\nНикаких тренировок. Максимум — растяжка 15 мин утром.\nПриоритет: хорошо поесть, выспаться в дороге.",
+    "intervals": [],
+    "tags": [
+      "rest",
+      "travel"
+    ],
+    "rpe_target": null,
+    "planned": true,
+    "completed": false,
+    "actual_avg_hr": null,
+    "actual_duration_min": null,
+    "notes_after": ""
+  }
+]

@@ -1,5 +1,4 @@
 import SwiftUI
-import UniformTypeIdentifiers
 
 struct ContentView: View {
     @StateObject private var loader = WorkoutLoader()
@@ -23,18 +22,6 @@ struct ContentView: View {
                     // Auth banner
                     if wkManager.authorizationStatus != .authorized {
                         authBanner
-                    }
-
-                    // Debug error banner
-                    if let err = wkManager.lastError {
-                        Text(err)
-                            .font(.system(size: 12))
-                            .foregroundColor(.white)
-                            .padding(10)
-                            .background(Color.red.opacity(0.7))
-                            .clipShape(RoundedRectangle(cornerRadius: 10))
-                            .padding(.horizontal, 16)
-                            .padding(.bottom, 4)
                     }
 
                     // Workout list

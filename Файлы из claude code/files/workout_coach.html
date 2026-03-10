@@ -1,0 +1,948 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Тренировка">
+<meta name="theme-color" content="#0a0a0f">
+<title>Тренировочный тренер</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@300;400;600;700;900&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0a0f;
+    --bg2: #12121a;
+    --bg3: #1a1a26;
+    --border: rgba(255,255,255,0.08);
+    --text: #f0f0f8;
+    --muted: rgba(240,240,248,0.4);
+    --z1: #22c55e;
+    --z2: #3b82f6;
+    --z3: #eab308;
+    --z4: #f97316;
+    --z5: #ef4444;
+    --active-zone: var(--z2);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Barlow Condensed', sans-serif;
+    min-height: 100vh;
+    min-height: 100dvh;
+    overflow-x: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── SCREENS ── */
+  .screen { display: none; flex-direction: column; min-height: 100dvh; }
+  .screen.active { display: flex; }
+
+  /* ── SPLASH ── */
+  #screen-splash {
+    justify-content: center;
+    align-items: center;
+    background: radial-gradient(ellipse at 60% 30%, rgba(59,130,246,0.15) 0%, transparent 60%),
+                radial-gradient(ellipse at 20% 80%, rgba(34,197,94,0.08) 0%, transparent 50%),
+                var(--bg);
+    padding: 32px;
+    text-align: center;
+    gap: 0;
+  }
+  .splash-logo {
+    font-size: 11px;
+    letter-spacing: 6px;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 24px;
+  }
+  .splash-title {
+    font-size: clamp(52px, 14vw, 80px);
+    font-weight: 900;
+    line-height: 0.9;
+    text-transform: uppercase;
+    letter-spacing: -1px;
+    margin-bottom: 8px;
+  }
+  .splash-title span { color: var(--z2); }
+  .splash-sub {
+    font-size: 16px;
+    font-weight: 300;
+    color: var(--muted);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-bottom: 48px;
+  }
+  .workout-cards {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-bottom: 40px;
+    max-height: 45dvh;
+    overflow-y: auto;
+  }
+  .workout-card {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 16px 20px;
+    text-align: left;
+    cursor: pointer;
+    transition: all 0.2s;
+    position: relative;
+    overflow: hidden;
+  }
+  .workout-card::before {
+    content: '';
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 4px;
+    background: var(--zone-color, var(--z2));
+    border-radius: 4px 0 0 4px;
+  }
+  .workout-card:active { transform: scale(0.98); opacity: 0.9; }
+  .workout-card.today { border-color: rgba(59,130,246,0.4); background: rgba(59,130,246,0.08); }
+  .card-date {
+    font-size: 11px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 4px;
+  }
+  .card-title { font-size: 20px; font-weight: 700; line-height: 1.2; margin-bottom: 6px; }
+  .card-meta {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+  }
+  .card-badge {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 1px;
+    padding: 3px 8px;
+    border-radius: 6px;
+    text-transform: uppercase;
+    background: rgba(255,255,255,0.08);
+  }
+  .card-dur { font-size: 13px; color: var(--muted); }
+  .today-label {
+    position: absolute;
+    top: 12px; right: 12px;
+    font-size: 10px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--z2);
+    font-weight: 700;
+  }
+  .btn-primary {
+    width: 100%;
+    background: var(--z2);
+    color: #fff;
+    border: none;
+    border-radius: 14px;
+    padding: 18px;
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .btn-primary:active { transform: scale(0.97); }
+
+  /* ── WORKOUT SCREEN ── */
+  #screen-workout {
+    flex: 1;
+    flex-direction: column;
+  }
+
+  .workout-header {
+    padding: 16px 20px 12px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+  }
+  .wh-title { font-size: 22px; font-weight: 700; line-height: 1.1; max-width: 70%; }
+  .wh-back {
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 6px 12px;
+    color: var(--muted);
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 14px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    cursor: pointer;
+  }
+
+  /* Zone display */
+  .zone-display {
+    margin: 16px 16px 0;
+    border-radius: 20px;
+    padding: 20px 24px 18px;
+    background: var(--bg3);
+    border: 1px solid var(--active-zone-color, rgba(59,130,246,0.3));
+    position: relative;
+    overflow: hidden;
+    transition: border-color 0.5s, background 0.5s;
+  }
+  .zone-display::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse at top right, var(--active-zone-glow, rgba(59,130,246,0.12)) 0%, transparent 60%);
+    pointer-events: none;
+    transition: 0.5s;
+  }
+  .zd-label {
+    font-size: 11px;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 2px;
+  }
+  .zd-zone {
+    font-size: 46px;
+    font-weight: 900;
+    line-height: 1;
+    letter-spacing: -1px;
+    transition: color 0.3s;
+  }
+  .zd-hr {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 16px;
+    color: var(--muted);
+    margin-top: 2px;
+  }
+  .zd-name {
+    position: absolute;
+    right: 24px;
+    top: 50%;
+    transform: translateY(-50%);
+    text-align: right;
+  }
+  .zd-name-text { font-size: 15px; font-weight: 600; color: var(--muted); }
+
+  /* Interval progress */
+  .interval-progress {
+    margin: 12px 16px 0;
+  }
+  .ip-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 8px;
+  }
+  .ip-current {
+    font-size: 13px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .ip-fraction {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    color: var(--muted);
+  }
+  .ip-note {
+    font-size: 20px;
+    font-weight: 700;
+    margin-bottom: 10px;
+    line-height: 1.2;
+  }
+
+  /* Timer */
+  .timer-block {
+    margin: 0 16px;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 16px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .timer-section { text-align: center; }
+  .timer-label {
+    font-size: 10px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 2px;
+  }
+  .timer-value {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 32px;
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: -1px;
+  }
+  .timer-value.big {
+    font-size: 48px;
+    color: var(--active-zone-color, var(--z2));
+    transition: color 0.3s;
+  }
+  .timer-divider {
+    width: 1px;
+    height: 50px;
+    background: var(--border);
+  }
+
+  /* Segments bar */
+  .segments {
+    margin: 12px 16px 0;
+    display: flex;
+    gap: 4px;
+    height: 8px;
+  }
+  .seg {
+    flex: 1;
+    border-radius: 4px;
+    background: var(--border);
+    overflow: hidden;
+    position: relative;
+  }
+  .seg-fill {
+    height: 100%;
+    border-radius: 4px;
+    transition: width 1s linear;
+  }
+  .seg.done .seg-fill { width: 100% !important; }
+  .seg.active .seg-fill { background: var(--active-zone-color, var(--z2)); }
+  .seg.pending .seg-fill { width: 0 !important; }
+
+  /* Intervals list */
+  .intervals-list {
+    margin: 12px 16px 0;
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding-bottom: 8px;
+  }
+  .int-item {
+    padding: 12px 16px;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    background: var(--bg3);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    opacity: 0.5;
+    transition: all 0.3s;
+  }
+  .int-item.active {
+    opacity: 1;
+    border-color: var(--item-zone, var(--z2));
+    background: rgba(59,130,246,0.08);
+    box-shadow: 0 0 20px rgba(59,130,246,0.1);
+  }
+  .int-item.done { opacity: 0.3; }
+  .int-dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .int-info { flex: 1; }
+  .int-note { font-size: 16px; font-weight: 600; }
+  .int-meta { font-size: 12px; color: var(--muted); margin-top: 1px; }
+  .int-dur {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 14px;
+    color: var(--muted);
+  }
+
+  /* Controls */
+  .controls {
+    padding: 12px 16px 20px;
+    display: flex;
+    gap: 10px;
+  }
+  .btn-ctrl {
+    flex: 1;
+    border: none;
+    border-radius: 14px;
+    padding: 16px 8px;
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .btn-ctrl:active { transform: scale(0.96); }
+  .btn-start { background: var(--z2); color: #fff; flex: 2; }
+  .btn-next { background: var(--bg3); color: var(--text); border: 1px solid var(--border); }
+  .btn-skip { background: var(--bg3); color: var(--muted); border: 1px solid var(--border); }
+  .btn-stop { background: rgba(239,68,68,0.15); color: var(--z5); border: 1px solid rgba(239,68,68,0.3); }
+
+  /* Shortcuts instruction */
+  #screen-shortcuts {
+    padding: 24px 20px;
+    overflow-y: auto;
+    background: var(--bg);
+  }
+  .si-title {
+    font-size: 32px;
+    font-weight: 900;
+    text-transform: uppercase;
+    letter-spacing: -0.5px;
+    margin-bottom: 6px;
+  }
+  .si-sub { font-size: 15px; color: var(--muted); margin-bottom: 32px; }
+  .step-block {
+    margin-bottom: 20px;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 18px 20px;
+    position: relative;
+    padding-left: 56px;
+  }
+  .step-num {
+    position: absolute;
+    left: 16px; top: 18px;
+    width: 28px; height: 28px;
+    background: var(--z2);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    font-weight: 900;
+    color: #fff;
+  }
+  .step-title { font-size: 18px; font-weight: 700; margin-bottom: 6px; }
+  .step-body { font-size: 14px; color: var(--muted); line-height: 1.5; font-weight: 400; }
+  .step-body strong { color: var(--text); font-weight: 600; }
+  .code-block {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    color: var(--z2);
+    margin-top: 8px;
+    word-break: break-all;
+  }
+  .btn-back-wrap { margin-top: 24px; }
+
+  /* Zone colors helper */
+  .z1c { color: var(--z1); } .z2c { color: var(--z2); }
+  .z3c { color: var(--z3); } .z4c { color: var(--z4); } .z5c { color: var(--z5); }
+</style>
+</head>
+<body>
+
+<!-- ══════════ SPLASH / SELECT ══════════ -->
+<div class="screen active" id="screen-splash">
+  <div class="splash-logo">Triathlon Coach</div>
+  <div class="splash-title">ТРЕНИР<span>О</span><br>ВОЧНЫЙ<br>ПЛАН</div>
+  <div class="splash-sub">Павел · Предвахта</div>
+  <div class="workout-cards" id="workout-list"></div>
+  <button class="btn-primary" onclick="showShortcuts()">⌚ Как загрузить на Apple Watch →</button>
+</div>
+
+<!-- ══════════ WORKOUT COACH ══════════ -->
+<div class="screen" id="screen-workout">
+  <div class="workout-header">
+    <div class="wh-title" id="wh-title"></div>
+    <button class="wh-back" onclick="backToList()">← Назад</button>
+  </div>
+
+  <div class="zone-display" id="zone-display">
+    <div class="zd-label">Целевая зона</div>
+    <div class="zd-zone" id="zd-zone">Z2</div>
+    <div class="zd-hr" id="zd-hr">120–145 уд/мин</div>
+    <div class="zd-name">
+      <div class="zd-name-text" id="zd-name">Аэробная база</div>
+    </div>
+  </div>
+
+  <div class="interval-progress">
+    <div class="ip-header">
+      <span class="ip-current">Текущий отрезок</span>
+      <span class="ip-fraction" id="ip-frac">1 / 3</span>
+    </div>
+    <div class="ip-note" id="ip-note">Разминка</div>
+  </div>
+
+  <div class="segments" id="segments"></div>
+
+  <div class="timer-block">
+    <div class="timer-section">
+      <div class="timer-label">Отрезок</div>
+      <div class="timer-value big" id="timer-interval">05:00</div>
+    </div>
+    <div class="timer-divider"></div>
+    <div class="timer-section">
+      <div class="timer-label">Всего</div>
+      <div class="timer-value" id="timer-total">40:00</div>
+    </div>
+    <div class="timer-divider"></div>
+    <div class="timer-section">
+      <div class="timer-label">Прошло</div>
+      <div class="timer-value" id="timer-elapsed">00:00</div>
+    </div>
+  </div>
+
+  <div class="intervals-list" id="intervals-list"></div>
+
+  <div class="controls">
+    <button class="btn-ctrl btn-start" id="btn-start" onclick="toggleTimer()">▶ Старт</button>
+    <button class="btn-ctrl btn-next" onclick="nextInterval()">→ Далее</button>
+    <button class="btn-ctrl btn-stop" onclick="backToList()">■ Стоп</button>
+  </div>
+</div>
+
+<!-- ══════════ SHORTCUTS GUIDE ══════════ -->
+<div class="screen" id="screen-shortcuts">
+  <div class="si-title">На Apple Watch</div>
+  <div class="si-sub">Как видеть план тренировки прямо на часах</div>
+
+  <div class="step-block">
+    <div class="step-num">1</div>
+    <div class="step-title">iPhone как тренер (уже работает)</div>
+    <div class="step-body">
+      Этот экран работает прямо сейчас — добавь страницу на Домашний экран iPhone.<br><br>
+      <strong>Как добавить:</strong> Safari → кнопка «Поделиться» → «На экран Домой». Работает офлайн.
+    </div>
+  </div>
+
+  <div class="step-block">
+    <div class="step-num">2</div>
+    <div class="step-title">WorkoutKit через Команды (iOS 17+)</div>
+    <div class="step-body">
+      <strong>Приложение «Команды» → «+» → добавить действие:</strong><br><br>
+      Ищи <strong>«Создать собственную тренировку»</strong> (WorkoutKit).<br>
+      Добавь отрезки с целевым пульсом. Тренировка появится в приложении <strong>Тренировка</strong> на часах как «Собственная тренировка» с зонами пульса.
+    </div>
+  </div>
+
+  <div class="step-block">
+    <div class="step-num">3</div>
+    <div class="step-title">Ручная настройка зон на часах</div>
+    <div class="step-body">
+      <strong>Настройки Apple Watch → Тренировка → Целевые зоны:</strong><br><br>
+      Введи свои пульсовые зоны вручную. Часы будут вибрировать когда пульс выходит из целевой зоны — это работает с любой тренировкой.
+    </div>
+  </div>
+
+  <div class="step-block">
+    <div class="step-num">4</div>
+    <div class="step-title">Кастомные зоны Павла для Watch</div>
+    <div class="step-body">
+      Настройки → Здоровье → Пульсовые зоны → Пользовательские:<br><br>
+      <strong class="z1c">Z1: 0–119 уд/мин</strong><br>
+      <strong class="z2c">Z2: 120–145 уд/мин</strong><br>
+      <strong class="z3c">Z3: 146–163 уд/мин</strong><br>
+      <strong class="z4c">Z4: 164–175 уд/мин</strong><br>
+      <strong class="z5c">Z5: 176+ уд/мин</strong>
+    </div>
+  </div>
+
+  <div class="step-block">
+    <div class="step-num">5</div>
+    <div class="step-title">Оптимальный сценарий во время бега</div>
+    <div class="step-body">
+      1. Запусти тренировку на часах (бег/вело)<br>
+      2. На iPhone открой эту страницу — тренер покажет текущий отрезок с таймером<br>
+      3. Голосовые подсказки объявят переход к следующему отрезку<br>
+      4. Часы вибрируют при выходе из зоны пульса<br><br>
+      <strong>Earphones + Apple Watch + iPhone тренер = полная система.</strong>
+    </div>
+  </div>
+
+  <div class="btn-back-wrap">
+    <button class="btn-primary" onclick="showList()">← К тренировкам</button>
+  </div>
+</div>
+
+<script>
+// ══════════════════════════════════════════════
+// ДАННЫЕ ТРЕНИРОВОК
+// ══════════════════════════════════════════════
+const ZONES = {
+  Z1: { name: "Восстановительная", min: 0,   max: 119, color: "#22c55e", glow: "rgba(34,197,94,0.15)"  },
+  Z2: { name: "Аэробная база",     min: 120, max: 145, color: "#3b82f6", glow: "rgba(59,130,246,0.15)" },
+  Z3: { name: "Аэробный порог",    min: 146, max: 163, color: "#eab308", glow: "rgba(234,179,8,0.15)"  },
+  Z4: { name: "Анаэробный порог",  min: 164, max: 175, color: "#f97316", glow: "rgba(249,115,22,0.15)" },
+  Z5: { name: "Максимум",          min: 176, max: 999, color: "#ef4444", glow: "rgba(239,68,68,0.15)"  },
+};
+
+const WORKOUTS = [
+  {
+    title: "🧘 Отдых + мобильность",
+    sport: "mobility",
+    date: "2026-03-09",
+    duration_min: 30,
+    target_zone: "Z1",
+    intervals: [
+      { duration_min: 20, zone: "Z1", note: "Растяжка всего тела" },
+      { duration_min: 10, zone: "Z1", note: "МФР — ролик" }
+    ]
+  },
+  {
+    title: "🏃 Лёгкий бег Z1",
+    sport: "run",
+    date: "2026-03-10",
+    duration_min: 40,
+    target_zone: "Z1",
+    intervals: [
+      { duration_min: 5,  zone: "Z1", note: "Разминка — шаг/трусца" },
+      { duration_min: 30, zone: "Z1", note: "Лёгкий бег Z1 < 119" },
+      { duration_min: 5,  zone: "Z1", note: "Заминка — шаг" }
+    ]
+  },
+  {
+    title: "🚴 Вело Z1–Z2",
+    sport: "bike",
+    date: "2026-03-11",
+    duration_min: 70,
+    target_zone: "Z2",
+    intervals: [
+      { duration_min: 10, zone: "Z1", note: "Разминка Z1" },
+      { duration_min: 50, zone: "Z2", note: "Аэробная база 120–130" },
+      { duration_min: 10, zone: "Z1", note: "Заминка Z1" }
+    ]
+  },
+  {
+    title: "🏃 Лёгкий бег Z1 (короткий)",
+    sport: "run",
+    date: "2026-03-12",
+    duration_min: 35,
+    target_zone: "Z1",
+    intervals: [
+      { duration_min: 5,  zone: "Z1", note: "Разминка" },
+      { duration_min: 25, zone: "Z1", note: "Лёгкий бег Z1" },
+      { duration_min: 5,  zone: "Z1", note: "Заминка + растяжка" }
+    ]
+  },
+  {
+    title: "🧘 Отдых",
+    sport: "rest",
+    date: "2026-03-13",
+    duration_min: 20,
+    target_zone: "Z1",
+    intervals: [{ duration_min: 20, zone: "Z1", note: "Прогулка или отдых" }]
+  },
+  {
+    title: "🚶 По ощущениям — прогулка / бег Z1",
+    sport: "run",
+    date: "2026-03-14",
+    duration_min: 40,
+    target_zone: "Z1",
+    intervals: [
+      { duration_min: 5,  zone: "Z1", note: "Разминка" },
+      { duration_min: 30, zone: "Z1", note: "Лёгкий бег или ходьба Z1" },
+      { duration_min: 5,  zone: "Z1", note: "Заминка" }
+    ]
+  },
+  {
+    title: "✈️ Отдых / Отъезд",
+    sport: "rest",
+    date: "2026-03-15",
+    duration_min: 15,
+    target_zone: "Z1",
+    intervals: [{ duration_min: 15, zone: "Z1", note: "Растяжка утром" }]
+  }
+];
+
+// ══════════════════════════════════════════════
+// STATE
+// ══════════════════════════════════════════════
+let currentWorkout = null;
+let currentInterval = 0;
+let timerRunning = false;
+let timerInterval = null;
+let intervalSecondsLeft = 0;
+let totalElapsed = 0;
+let totalSeconds = 0;
+
+// ══════════════════════════════════════════════
+// UTILS
+// ══════════════════════════════════════════════
+function todayStr() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function formatTime(seconds) {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+}
+
+function zoneColor(z) {
+  return ZONES[z]?.color || '#3b82f6';
+}
+
+// ══════════════════════════════════════════════
+// SCREENS
+// ══════════════════════════════════════════════
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  window.scrollTo(0,0);
+}
+
+function showList() { showScreen('screen-splash'); }
+function showShortcuts() { showScreen('screen-shortcuts'); }
+function backToList() {
+  stopTimer();
+  showList();
+}
+
+// ══════════════════════════════════════════════
+// RENDER SPLASH
+// ══════════════════════════════════════════════
+function renderWorkoutList() {
+  const today = todayStr();
+  const list = document.getElementById('workout-list');
+  list.innerHTML = '';
+
+  WORKOUTS.forEach((w, idx) => {
+    const isToday = w.date === today;
+    const d = new Date(w.date + 'T12:00:00');
+    const dayStr = d.toLocaleDateString('ru-RU', { weekday: 'short', day: 'numeric', month: 'short' });
+    const zc = zoneColor(w.target_zone);
+
+    const card = document.createElement('div');
+    card.className = 'workout-card' + (isToday ? ' today' : '');
+    card.style.setProperty('--zone-color', zc);
+    card.onclick = () => startWorkout(idx);
+    card.innerHTML = `
+      <div class="card-date">${dayStr}</div>
+      <div class="card-title">${w.title}</div>
+      <div class="card-meta">
+        <span class="card-badge" style="color:${zc}">${w.target_zone}</span>
+        <span class="card-dur">${w.duration_min} мин · ${w.intervals.length} отрезка</span>
+      </div>
+      ${isToday ? '<div class="today-label">СЕГОДНЯ</div>' : ''}
+    `;
+    list.appendChild(card);
+  });
+}
+
+// ══════════════════════════════════════════════
+// WORKOUT LOGIC
+// ══════════════════════════════════════════════
+function startWorkout(idx) {
+  currentWorkout = WORKOUTS[idx];
+  currentInterval = 0;
+  totalElapsed = 0;
+  totalSeconds = currentWorkout.intervals.reduce((s, i) => s + i.duration_min * 60, 0);
+  timerRunning = false;
+
+  document.getElementById('wh-title').textContent = currentWorkout.title;
+  renderIntervalsList();
+  renderSegments();
+  updateZoneDisplay();
+  updateTimers();
+  document.getElementById('btn-start').textContent = '▶ Старт';
+
+  showScreen('screen-workout');
+}
+
+function renderIntervalsList() {
+  const list = document.getElementById('intervals-list');
+  list.innerHTML = '';
+  currentWorkout.intervals.forEach((intv, i) => {
+    const zc = zoneColor(intv.zone);
+    const item = document.createElement('div');
+    item.className = 'int-item' + (i === currentInterval ? ' active' : i < currentInterval ? ' done' : '');
+    item.style.setProperty('--item-zone', zc);
+    if (i === currentInterval) {
+      item.style.borderColor = zc;
+      item.style.background = zc + '18';
+    }
+    item.innerHTML = `
+      <div class="int-dot" style="background:${zc}"></div>
+      <div class="int-info">
+        <div class="int-note">${intv.note}</div>
+        <div class="int-meta">${intv.zone} · ${ZONES[intv.zone].min}–${intv.zone === 'Z5' ? '∞' : ZONES[intv.zone].max} уд/мин</div>
+      </div>
+      <div class="int-dur">${intv.duration_min}'</div>
+    `;
+    list.appendChild(item);
+  });
+
+  // Scroll active into view
+  const activeEl = list.querySelectorAll('.int-item')[currentInterval];
+  if (activeEl) setTimeout(() => activeEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 100);
+}
+
+function renderSegments() {
+  const segs = document.getElementById('segments');
+  segs.innerHTML = '';
+  currentWorkout.intervals.forEach((_, i) => {
+    const seg = document.createElement('div');
+    const fill = document.createElement('div');
+    fill.className = 'seg-fill';
+    const zc = zoneColor(currentWorkout.intervals[i].zone);
+
+    if (i < currentInterval) {
+      seg.className = 'seg done';
+      fill.style.background = zc;
+      fill.style.width = '100%';
+    } else if (i === currentInterval) {
+      seg.className = 'seg active';
+      fill.style.background = zc;
+      const total = currentWorkout.intervals[i].duration_min * 60;
+      const pct = ((total - intervalSecondsLeft) / total * 100).toFixed(1);
+      fill.style.width = pct + '%';
+    } else {
+      seg.className = 'seg pending';
+    }
+    seg.appendChild(fill);
+    segs.appendChild(seg);
+  });
+}
+
+function updateZoneDisplay() {
+  const intv = currentWorkout.intervals[currentInterval];
+  const z = ZONES[intv.zone];
+  const zc = z.color;
+  const hrStr = intv.zone === 'Z5' ? `>${z.min} уд/мин` : `${z.min}–${z.max} уд/мин`;
+
+  document.getElementById('zd-zone').textContent = intv.zone;
+  document.getElementById('zd-zone').style.color = zc;
+  document.getElementById('zd-hr').textContent = hrStr;
+  document.getElementById('zd-name').textContent = z.name;
+
+  const disp = document.getElementById('zone-display');
+  disp.style.borderColor = zc + '50';
+  disp.style.setProperty('--active-zone-glow', z.glow);
+
+  document.getElementById('timer-interval').style.color = zc;
+  document.getElementById('ip-frac').textContent = `${currentInterval + 1} / ${currentWorkout.intervals.length}`;
+  document.getElementById('ip-note').textContent = intv.note;
+}
+
+function updateTimers() {
+  if (!currentWorkout) return;
+  const intv = currentWorkout.intervals[currentInterval];
+  if (intervalSecondsLeft === 0) {
+    intervalSecondsLeft = intv.duration_min * 60;
+  }
+  document.getElementById('timer-interval').textContent = formatTime(intervalSecondsLeft);
+  document.getElementById('timer-total').textContent = formatTime(totalSeconds - totalElapsed);
+  document.getElementById('timer-elapsed').textContent = formatTime(totalElapsed);
+}
+
+function toggleTimer() {
+  if (timerRunning) {
+    pauseTimer();
+  } else {
+    startTimer();
+  }
+}
+
+function startTimer() {
+  timerRunning = true;
+  document.getElementById('btn-start').textContent = '⏸ Пауза';
+
+  const intv = currentWorkout.intervals[currentInterval];
+  if (intervalSecondsLeft === 0) {
+    intervalSecondsLeft = intv.duration_min * 60;
+  }
+
+  timerInterval = setInterval(() => {
+    intervalSecondsLeft--;
+    totalElapsed++;
+    updateTimers();
+    renderSegments();
+
+    if (intervalSecondsLeft <= 0) {
+      announceNext();
+      if (currentInterval < currentWorkout.intervals.length - 1) {
+        currentInterval++;
+        intervalSecondsLeft = currentWorkout.intervals[currentInterval].duration_min * 60;
+        updateZoneDisplay();
+        renderIntervalsList();
+        renderSegments();
+      } else {
+        // Workout done
+        stopTimer();
+        speak('Тренировка завершена! Отличная работа!');
+        document.getElementById('btn-start').textContent = '✓ Готово';
+      }
+    }
+  }, 1000);
+}
+
+function pauseTimer() {
+  timerRunning = false;
+  clearInterval(timerInterval);
+  document.getElementById('btn-start').textContent = '▶ Старт';
+}
+
+function stopTimer() {
+  timerRunning = false;
+  clearInterval(timerInterval);
+}
+
+function nextInterval() {
+  if (!currentWorkout) return;
+  if (currentInterval < currentWorkout.intervals.length - 1) {
+    stopTimer();
+    currentInterval++;
+    intervalSecondsLeft = currentWorkout.intervals[currentInterval].duration_min * 60;
+    timerRunning = false;
+    document.getElementById('btn-start').textContent = '▶ Старт';
+    updateZoneDisplay();
+    updateTimers();
+    renderIntervalsList();
+    renderSegments();
+    announceNext();
+  }
+}
+
+// ══════════════════════════════════════════════
+// VOICE
+// ══════════════════════════════════════════════
+function speak(text) {
+  if (!('speechSynthesis' in window)) return;
+  window.speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = 'ru-RU';
+  u.rate = 1.0;
+  u.pitch = 1.0;
+  window.speechSynthesis.speak(u);
+}
+
+function announceNext() {
+  if (!currentWorkout) return;
+  const next = currentWorkout.intervals[currentInterval + 1];
+  if (next) {
+    const z = ZONES[next.zone];
+    const hrStr = next.zone === 'Z5' ? `выше ${z.min}` : `${z.min} — ${z.max}`;
+    speak(`Следующий отрезок: ${next.note}. ${next.zone}: ${hrStr} ударов в минуту. ${next.duration_min} минут.`);
+  }
+}
+
+// ══════════════════════════════════════════════
+// INIT
+// ══════════════════════════════════════════════
+renderWorkoutList();
+
+// Prevent sleep on iOS when timer is running
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden && timerRunning) {
+    // Timer keeps running
+  }
+});
+</script>
+</body>
+</html>

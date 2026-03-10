@@ -1,0 +1,78 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Triathlon Planner//RU
+X-WR-CALNAME:🏃 Тренировки — Предвахта
+X-WR-TIMEZONE:Asia/Irkutsk
+CALSCALE:GREGORIAN
+METHOD:PUBLISH
+BEGIN:VEVENT
+UID:b1ef6a9b-85a9-473f-af1a-7f36a4ec5c43
+DTSTAMP:20260307T114942Z
+DTSTART;TZID=Asia/Irkutsk:20260309T090000
+DTEND;TZID=Asia/Irkutsk:20260309T093000
+SUMMARY:🧘 Отдых + мобильность
+DESCRIPTION:Полный отдых от нагрузки.\n\n20 мин: лёгкая растяжка всего тела\n10 мин: МФР (пенный ролик) — квадрицепс\, икры\, IT-band\n\nЦель: максимально восстановиться перед отъездом на вахту.\n🏷 Теги: recovery\, pre-shift
+CATEGORIES:PERSONAL
+STATUS:CONFIRMED
+END:VEVENT
+BEGIN:VEVENT
+UID:4cc444b2-4b8e-4cb4-969f-6caf7c705fba
+DTSTAMP:20260307T114942Z
+DTSTART;TZID=Asia/Irkutsk:20260310T080000
+DTEND;TZID=Asia/Irkutsk:20260310T084000
+SUMMARY:🏃 Лёгкий бег Z1
+DESCRIPTION:Лёгкий восстановительный бег.\n\nЦелевой пульс: 🟢 Z1 Восстановительная (0–119 уд/мин)\nТемп: очень комфортный\, можно говорить полными предложениями\n\nСтруктура:\n  5 мин — разминка шагом/трусцой\n  30 мин — лёгкий бег\, строго Z1\n  5 мин — заминка шагом\n\n⚠️ Если пульс уходит выше 119 — перейди на шаг.\n\n── СТРУКТУРА ──\n1. 5 мин | Z1 | 0–119 уд/мин | Разминка — шаг/трусца\n2. 30 мин | Z1 | 0–119 уд/мин | Лёгкий бег Z1 < 119\n3. 5 мин | Z1 | 0–119 уд/мин | Заминка — шаг\n\n🎯 Субъективная нагрузка (RPE): 4/10\n🏷 Теги: run\, z1\, pre-shift
+CATEGORIES:SPORT
+STATUS:CONFIRMED
+END:VEVENT
+BEGIN:VEVENT
+UID:dc608312-0ed2-4a56-b445-3887a9634847
+DTSTAMP:20260307T114942Z
+DTSTART;TZID=Asia/Irkutsk:20260311T080000
+DTEND;TZID=Asia/Irkutsk:20260311T091000
+SUMMARY:🚴 Вело Z1–Z2
+DESCRIPTION:Аэробная велотренировка — последняя перед вахтой.\n\nЦелевой пульс: 🟢 Z1 Восстановительная (0–119 уд/мин) / низкий 🔵 Z2 Аэробная база (120–145 уд/мин)\nДержи пульс в диапазоне 115–130\, максимум 135.\n\nСтруктура:\n  10 мин — разминка Z1\n  50 мин — ровное усилие\, пульс 120–130\n  10 мин — заминка Z1\n\n💡 Это базовая аэробная работа — никакого ускорения\, никаких горок в полную силу. Наслаждайся последним выездом на улицу.\n\n── СТРУКТУРА ──\n1. 10 мин | Z1 | 0–119 уд/мин | Разминка\n2. 50 мин | Z2 | 120–145 уд/мин | Аэробная база 120–130 уд/мин\n3. 10 мин | Z1 | 0–119 уд/мин | Заминка\n\n🎯 Субъективная нагрузка (RPE): 5/10\n🏷 Теги: bike\, z2\, pre-shift
+CATEGORIES:SPORT
+STATUS:CONFIRMED
+END:VEVENT
+BEGIN:VEVENT
+UID:2b55249e-120f-4d1e-9fc1-577b08d6b0af
+DTSTAMP:20260307T114942Z
+DTSTART;TZID=Asia/Irkutsk:20260312T080000
+DTEND;TZID=Asia/Irkutsk:20260312T083500
+SUMMARY:🏃 Лёгкий бег Z1 (короткий)
+DESCRIPTION:Короткий лёгкий бег — поддержание активности.\n\nЦелевой пульс: 🟢 Z1 Восстановительная (0–119 уд/мин)\n\nСтруктура:\n  5 мин — разминка шагом\n  25 мин — лёгкий бег Z1\n  5 мин — заминка + растяжка икр и квадрицепса\n\n⚠️ Короче среды специально — накапливаем свежесть к отъезду.\n\n── СТРУКТУРА ──\n1. 5 мин | Z1 | 0–119 уд/мин | Разминка\n2. 25 мин | Z1 | 0–119 уд/мин | Лёгкий бег Z1\n3. 5 мин | Z1 | 0–119 уд/мин | Заминка + растяжка\n\n🎯 Субъективная нагрузка (RPE): 3/10\n🏷 Теги: run\, z1\, pre-shift
+CATEGORIES:SPORT
+STATUS:CONFIRMED
+END:VEVENT
+BEGIN:VEVENT
+UID:cbc9c7dd-fe4d-472d-8177-75909643ecaa
+DTSTAMP:20260307T114942Z
+DTSTART;TZID=Asia/Irkutsk:20260313T090000
+DTEND;TZID=Asia/Irkutsk:20260313T092000
+SUMMARY:🧘 Отдых
+DESCRIPTION:Полный отдых.\n\nМожно: лёгкая прогулка 20–30 мин без пульсового контроля.\nФокус: сборы\, питание\, сон.\n🏷 Теги: rest\, pre-shift
+CATEGORIES:PERSONAL
+STATUS:CONFIRMED
+END:VEVENT
+BEGIN:VEVENT
+UID:7a93a118-9b38-40f7-b530-59609887f402
+DTSTAMP:20260307T114942Z
+DTSTART;TZID=Asia/Irkutsk:20260314T090000
+DTEND;TZID=Asia/Irkutsk:20260314T094000
+SUMMARY:🚶 По ощущениям — прогулка или Z1 бег
+DESCRIPTION:Тренировка по самочувствию.\n\nВариант А (если тело свежее): лёгкий бег 35–40 мин Z1\nВариант Б (если есть усталость): прогулка 45–50 мин\n\nЦелевой пульс: 🟢 Z1 Восстановительная (0–119 уд/мин)\n\nСлушай тело — это последний день перед вахтой.\n\n🎯 Субъективная нагрузка (RPE): 3/10\n🏷 Теги: run\, optional\, pre-shift
+CATEGORIES:SPORT
+STATUS:CONFIRMED
+END:VEVENT
+BEGIN:VEVENT
+UID:871ce693-0760-41c7-a22e-ab53daed608a
+DTSTAMP:20260307T114942Z
+DTSTART;TZID=Asia/Irkutsk:20260315T090000
+DTEND;TZID=Asia/Irkutsk:20260315T091500
+SUMMARY:✈️ Отдых / Отъезд
+DESCRIPTION:Отъезд на вахту.\n\nНикаких тренировок. Максимум — растяжка 15 мин утром.\nПриоритет: хорошо поесть\, выспаться в дороге.\n🏷 Теги: rest\, travel
+CATEGORIES:PERSONAL
+STATUS:CONFIRMED
+END:VEVENT
+END:VCALENDAR
