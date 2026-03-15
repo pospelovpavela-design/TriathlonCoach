@@ -383,8 +383,8 @@ class HealthKitReader: ObservableObject {
                 options: [.discreteAverage, .discreteMax]
             ) { _, stats, _ in
                 let unit = HKUnit(from: "count/min")
-                let avg = stats?.averageQuantity()?.doubleValue(for: unit).map { Int($0.rounded()) }
-                let max = stats?.maximumQuantity()?.doubleValue(for: unit).map { Int($0.rounded()) }
+                let avg = stats?.averageQuantity().map { Int($0.doubleValue(for: unit).rounded()) }
+                let max = stats?.maximumQuantity().map { Int($0.doubleValue(for: unit).rounded()) }
                 cont.resume(returning: (avg, max))
             }
             store.execute(q)
