@@ -20,10 +20,24 @@ struct WorkoutPlanJSON: Codable, Identifiable {
     var actual_duration_min: Int?
     var notes_after: String
 
+    // Recovery & wellness metrics (logged after workout)
+    var hrv_before: Int?
+    var hrv_after: Int?
+    var spo2_percent: Double?
+    var hr_recovery_60s: Int?
+    var rpe_actual: Int?
+    var sleep_hours: Double?
+    var sleep_quality: Int?   // 1–5
+    var resting_hr: Int?      // утренний пульс покоя (уд/мин)
+    var sleep_avg_hr: Int?    // средний пульс во сне (уд/мин)
+
     enum CodingKeys: String, CodingKey {
         case title, sport, date, duration_min, target_zone, description
         case intervals, tags, rpe_target, planned, completed
         case actual_avg_hr, actual_duration_min, notes_after
+        case hrv_before, hrv_after, spo2_percent, hr_recovery_60s
+        case rpe_actual, sleep_hours, sleep_quality
+        case resting_hr, sleep_avg_hr
     }
 }
 
@@ -72,24 +86,32 @@ struct HRZone {
 extension WorkoutPlanJSON {
     var activityType: HKWorkoutActivityType {
         switch sport {
-        case "run":      return .running
-        case "bike":     return .cycling
-        case "swim":     return .swimming
-        case "strength": return .traditionalStrengthTraining
-        case "mobility": return .flexibility
-        default:         return .other
+        case "run":         return .running
+        case "bike":        return .cycling
+        case "swim":        return .swimming
+        case "strength":    return .traditionalStrengthTraining
+        case "mobility":    return .flexibility
+        case "bike_indoor": return .cycling
+        case "run_indoor":  return .running
+        case "core":        return .coreTraining
+        case "stretch":     return .flexibility
+        default:            return .other
         }
     }
 
     var sportIcon: String {
         switch sport {
-        case "run":      return "figure.run"
-        case "bike":     return "figure.outdoor.cycle"
-        case "swim":     return "figure.pool.swim"
-        case "strength": return "dumbbell"
-        case "mobility": return "figure.flexibility"
-        case "rest":     return "moon.zzz"
-        default:         return "heart"
+        case "run":         return "figure.run"
+        case "bike":        return "figure.outdoor.cycle"
+        case "swim":        return "figure.pool.swim"
+        case "strength":    return "dumbbell"
+        case "mobility":    return "figure.flexibility"
+        case "bike_indoor": return "figure.indoor.cycle"
+        case "run_indoor":  return "figure.run.treadmill"
+        case "core":        return "figure.core.training"
+        case "stretch":     return "figure.flexibility"
+        case "rest":        return "moon.zzz"
+        default:            return "heart"
         }
     }
 

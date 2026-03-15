@@ -14,6 +14,8 @@ class WorkoutKitManager: ObservableObject {
     @Published var isLoading = false
     @Published var lastError: String?
 
+    private let indoorSports: Set<String> = ["bike_indoor", "run_indoor", "strength", "core"]
+
     enum AuthStatus {
         case unknown, authorized, denied
         var description: String {
@@ -61,12 +63,14 @@ class WorkoutKitManager: ObservableObject {
         lastError = nil
         defer { isLoading = false }
 
-        guard workout.sport != "rest", workout.sport != "mobility" else {
-            lastError = "Тренировки типа 'отдых' не добавляются на часы"
+        guard workout.sport != "rest", workout.sport != "mobility", workout.sport != "stretch" else {
+            lastError = "Тренировки типа 'отдых/растяжка' не добавляются на часы"
             return false
         }
 
         let activityType = workout.activityType
+        let location: HKWorkoutSessionLocationType = indoorSports.contains(workout.sport) ? .indoor : .outdoor
+
         guard CustomWorkout.supportsActivity(activityType) else {
             lastError = "Тип тренировки «\(workout.sport)» не поддерживается WorkoutKit на часах"
             return false
@@ -85,7 +89,7 @@ class WorkoutKitManager: ObservableObject {
             let hrAlert: HeartRateRangeAlert = .heartRate(minHR...maxHR)
 
             let alertSupported = CustomWorkout.supportsAlert(
-                hrAlert, activity: activityType, location: .outdoor
+                hrAlert, activity: activityType, location: location
             )
             let step = WorkoutStep(
                 goal: goal,
@@ -103,7 +107,7 @@ class WorkoutKitManager: ObservableObject {
         let block = IntervalBlock(steps: intervalSteps, iterations: 1)
         let customWorkout = CustomWorkout(
             activity: activityType,
-            location: .outdoor,
+            location: location,
             displayName: workout.title,
             blocks: [block]
         )
@@ -131,7 +135,7 @@ class WorkoutKitManager: ObservableObject {
     func saveAllWorkouts(_ workouts: [WorkoutPlanJSON]) async -> (saved: Int, failed: Int) {
         var saved = 0
         var failed = 0
-        let trainable = workouts.filter { $0.sport != "rest" && $0.sport != "mobility" }
+        let trainable = workouts.filter { $0.sport != "rest" && $0.sport != "mobility" && $0.sport != "stretch" }
         for workout in trainable {
             let success = await saveWorkout(workout)
             if success { saved += 1 } else { failed += 1 }

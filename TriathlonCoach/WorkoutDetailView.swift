@@ -5,9 +5,11 @@ struct WorkoutDetailView: View {
     @ObservedObject var wkManager: WorkoutKitManager
     var onUpdate: ((WorkoutPlanJSON) -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject var store: AppStore
     @State private var isSaving = false
     @State private var saveResult: String?
     @State private var showLog = false
+    @State private var reportCopied = false
 
     private var totalMinutes: Int { workout.intervals.reduce(0) { $0 + $1.duration_min } }
 
@@ -31,7 +33,7 @@ struct WorkoutDetailView: View {
                         }
 
                         // Send to Watch
-                        if workout.sport != "rest" && workout.sport != "mobility" {
+                        if workout.sport != "rest" && workout.sport != "mobility" && workout.sport != "stretch" {
                             watchSection
                         }
 
@@ -50,6 +52,24 @@ struct WorkoutDetailView: View {
                                 .background(workout.completed ? Color.green.opacity(0.3) : Color.white.opacity(0.1))
                                 .clipShape(RoundedRectangle(cornerRadius: 14))
                             }
+                        }
+
+                        // Copy workout report for Claude
+                        Button(action: copyReport) {
+                            HStack(spacing: 8) {
+                                Image(systemName: reportCopied ? "checkmark.circle.fill" : "doc.on.clipboard")
+                                Text(reportCopied ? "Отчёт скопирован!" : "Скопировать отчёт для Claude")
+                                    .fontWeight(.semibold)
+                            }
+                            .font(.system(size: 15))
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                            .background(reportCopied
+                                ? Color.green.opacity(0.6)
+                                : Color.white.opacity(0.08))
+                            .clipShape(RoundedRectangle(cornerRadius: 14))
+                            .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.1), lineWidth: 1))
                         }
 
                         Spacer(minLength: 40)
@@ -244,6 +264,15 @@ struct WorkoutDetailView: View {
         .padding(14)
         .background(Color.white.opacity(0.04))
         .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+
+    // MARK: - Report
+
+    private func copyReport() {
+        let report = ReportBuilder.workoutReport(workout, profile: store.profile)
+        UIPasteboard.general.string = report
+        withAnimation { reportCopied = true }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { withAnimation { reportCopied = false } }
     }
 
     // MARK: - Helpers

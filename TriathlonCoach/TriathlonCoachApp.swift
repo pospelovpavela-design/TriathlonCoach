@@ -4,6 +4,7 @@ import SwiftUI
 struct TriathlonCoachApp: App {
     @StateObject private var store = AppStore()
     @StateObject private var wkManager = WorkoutKitManager()
+    @StateObject private var healthReader = HealthKitReader()
 
     var body: some Scene {
         WindowGroup {
@@ -26,11 +27,13 @@ struct TriathlonCoachApp: App {
             }
             .environmentObject(store)
             .environmentObject(wkManager)
+            .environmentObject(healthReader)
             .tint(.blue)
             .preferredColorScheme(.dark)
             .task {
                 await wkManager.requestAuthorization()
                 await wkManager.loadSavedPlans()
+                await healthReader.requestAuthorization()
             }
         }
     }

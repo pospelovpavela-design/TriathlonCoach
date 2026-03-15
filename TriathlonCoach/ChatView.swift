@@ -18,18 +18,16 @@ struct ChatView: View {
     }
 
     var body: some View {
-        ZStack {
-            Color(red: 0.04, green: 0.04, blue: 0.06).ignoresSafeArea()
-            ScrollView {
-                VStack(spacing: 20) {
-                    header
-                    step1Section
-                    step2Section
-                    Spacer(minLength: 40)
-                }
-                .padding(.horizontal, 16)
+        ScrollView {
+            VStack(spacing: 20) {
+                header
+                step1Section
+                step2Section
+                Spacer(minLength: 40)
             }
+            .padding(.horizontal, 16)
         }
+        .background(Color(red: 0.04, green: 0.04, blue: 0.06).ignoresSafeArea())
         .onAppear { generatePrompt() }
         .onChange(of: store.pendingPrompt) { msg in
             guard !msg.isEmpty else { return }
@@ -53,7 +51,7 @@ struct ChatView: View {
             }
             Spacer()
         }
-        .padding(.top, 56).padding(.bottom, 4)
+        .padding(.top, 16).padding(.bottom, 4)
     }
 
     // MARK: - Step 1

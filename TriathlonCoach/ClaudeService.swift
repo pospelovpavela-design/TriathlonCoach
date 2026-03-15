@@ -30,7 +30,7 @@ actor ClaudeService {
         • Z4: 164–175 уд/мин — анаэробный порог
         • Z5: 176+ уд/мин — максимум
 
-        Виды спорта (только эти значения в поле "sport"): run, bike, swim, strength, mobility, rest
+        Виды спорта (только эти значения в поле "sport"): run, bike, swim, strength, mobility, rest, bike_indoor, run_indoor, core, stretch
 
         ВАЖНО: В ответе обязательно включи JSON-блок строго в таком формате:
         ```json

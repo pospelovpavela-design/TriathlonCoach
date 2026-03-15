@@ -38,7 +38,7 @@ struct WorkoutRow: View {
                         }
                         Spacer()
                         // Save to Watch button
-                        if workout.sport != "rest" && workout.sport != "mobility" {
+                        if workout.sport != "rest" && workout.sport != "mobility" && workout.sport != "stretch" {
                             watchButton
                         }
                     }

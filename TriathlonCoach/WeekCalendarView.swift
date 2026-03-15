@@ -22,7 +22,6 @@ struct WeekCalendarView: View {
 
     var body: some View {
         ZStack {
-            Color(red: 0.04, green: 0.04, blue: 0.06).ignoresSafeArea()
             VStack(spacing: 0) {
                 header
                 weekNavigator
@@ -57,6 +56,7 @@ struct WeekCalendarView: View {
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
+        .background(Color(red: 0.04, green: 0.04, blue: 0.06).ignoresSafeArea())
         .sheet(isPresented: $showDetail) {
             if let w = selectedWorkout {
                 WorkoutDetailView(
@@ -108,7 +108,7 @@ struct WeekCalendarView: View {
                 .background(Color.white.opacity(0.08)).clipShape(RoundedRectangle(cornerRadius: 10))
             }
         }
-        .padding(.horizontal, 16).padding(.top, 56).padding(.bottom, 8)
+        .padding(.horizontal, 16).padding(.top, 16).padding(.bottom, 8)
     }
 
     private var weekNavigator: some View {

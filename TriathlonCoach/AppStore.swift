@@ -186,4 +186,14 @@ class AppStore: ObservableObject {
         fmt.dateFormat = "yyyy-MM-dd"
         return "\(fmt.string(from: mon)) – \(fmt.string(from: sun))"
     }
+
+    func nextWeekRange(relativeTo date: Date) -> String {
+        let cal = Calendar.current
+        let (mon, _) = weekBounds(containing: date)
+        guard let nextMon = cal.date(byAdding: .weekOfYear, value: 1, to: mon),
+              let nextSun = cal.date(byAdding: .day, value: 6, to: nextMon) else { return "" }
+        let fmt = DateFormatter()
+        fmt.dateFormat = "yyyy-MM-dd"
+        return "\(fmt.string(from: nextMon)) – \(fmt.string(from: nextSun))"
+    }
 }
