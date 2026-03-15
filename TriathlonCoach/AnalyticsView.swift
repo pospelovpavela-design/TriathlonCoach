@@ -540,14 +540,37 @@ struct LogWorkoutSheet: View {
                         // Sleep
                         sectionHeader("Сон накануне")
                         HStack(spacing: 12) {
-                            inputField("Часов сна", hint: "напр. 7.5", value: $sleepHours)
+                            inputField("Общее время (ч)", hint: "напр. 7.5", value: $sleepHours)
                                 .keyboardType(.decimalPad)
-                            Spacer()
-                        }
-                        HStack(spacing: 12) {
                             inputField("HRV во сне (мс)", hint: "напр. 48", value: $sleepHRV)
                                 .keyboardType(.numberPad)
-                            Spacer()
+                        }
+                        // Sleep phases
+                        HStack(spacing: 12) {
+                            inputField("Глубокий (ч)", hint: "напр. 1.5", value: $sleepDeepHours)
+                                .keyboardType(.decimalPad)
+                            inputField("REM (ч)", hint: "напр. 2.0", value: $sleepRemHours)
+                                .keyboardType(.decimalPad)
+                            inputField("Core (ч)", hint: "напр. 3.5", value: $sleepCoreHours)
+                                .keyboardType(.decimalPad)
+                        }
+                        // Phase summary chip (shown when any phase is loaded)
+                        if !sleepDeepHours.isEmpty || !sleepRemHours.isEmpty || !sleepCoreHours.isEmpty {
+                            HStack(spacing: 8) {
+                                Image(systemName: "moon.zzz.fill")
+                                    .font(.system(size: 12)).foregroundColor(.indigo.opacity(0.8))
+                                if !sleepDeepHours.isEmpty {
+                                    phaseChip("Глуб.", sleepDeepHours + "ч", color: .indigo)
+                                }
+                                if !sleepRemHours.isEmpty {
+                                    phaseChip("REM", sleepRemHours + "ч", color: .purple)
+                                }
+                                if !sleepCoreHours.isEmpty {
+                                    phaseChip("Core", sleepCoreHours + "ч", color: .blue)
+                                }
+                                Spacer()
+                            }
+                            .padding(.horizontal, 4)
                         }
                         VStack(alignment: .leading, spacing: 6) {
                             Text("Качество сна").font(.system(size: 13)).foregroundColor(.white.opacity(0.5))
@@ -637,6 +660,16 @@ struct LogWorkoutSheet: View {
                 .background(Color.white.opacity(0.06))
                 .clipShape(RoundedRectangle(cornerRadius: 10))
         }
+    }
+
+    private func phaseChip(_ label: String, _ value: String, color: Color) -> some View {
+        HStack(spacing: 3) {
+            Text(label).font(.system(size: 11, weight: .semibold)).foregroundColor(color.opacity(0.9))
+            Text(value).font(.system(size: 11)).foregroundColor(.white.opacity(0.7))
+        }
+        .padding(.horizontal, 8).padding(.vertical, 4)
+        .background(color.opacity(0.12))
+        .clipShape(RoundedRectangle(cornerRadius: 6))
     }
 
     // MARK: - Logic

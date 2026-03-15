@@ -282,8 +282,17 @@ class HealthKitReader: ObservableObject {
         guard !sleepSamples.isEmpty else { return nil }
 
         // rawValue: 1=asleep(legacy), 3=asleepCore, 4=asleepDeep, 5=asleepREM, 6=asleepUnspecified
+        // If Apple Watch phase data exists (3,4,5), use ONLY that — avoid double-counting with
+        // iPhone's legacy value=1 which covers the same period as a single block.
+        let phasedSamples = sleepSamples.filter { [3, 4, 5].contains($0.value) }
+        let asleepSamples: [HKCategorySample]
+        if !phasedSamples.isEmpty {
+            asleepSamples = phasedSamples
+        } else {
+            asleepSamples = sleepSamples.filter { [1, 6].contains($0.value) }
+        }
+
         var total = 0.0, deep = 0.0, rem = 0.0, core = 0.0
-        let asleepSamples = sleepSamples.filter { [1, 3, 4, 5, 6].contains($0.value) }
         for s in asleepSamples {
             let h = s.endDate.timeIntervalSince(s.startDate) / 3600
             total += h
