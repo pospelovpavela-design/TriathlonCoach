@@ -676,44 +676,60 @@ struct LogWorkoutSheet: View {
     }
 
     private func readFromHealth() async {
-        guard let date = workout.parsedDate else {
+        guard let planDate = workout.parsedDate else {
             healthStatus = "Ошибка: не удалось определить дату тренировки"
             return
         }
         isLoadingHealth = true
 
-        // Step 1: get workout data first (need endTime for HRV-after and HR-recovery)
-        let wd = await healthReader.workoutData(sport: workout.sport, on: date)
+        // For wellness metrics use today (or yesterday) — plan date may be future/past
+        let today     = Calendar.current.startOfDay(for: Date())
+        let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: today) ?? today
+        // Prefer plan date if it's today or in the past, else use today
+        let wellnessDate = planDate <= Date() ? planDate : today
 
-        // Step 2: everything else in parallel, using real workout endTime if available
-        let workoutEnd = wd?.endTime ?? Calendar.current.date(byAdding: .hour, value: 20, to: date) ?? date
-        async let hrv       = healthReader.hrvOrYesterday(for: date)
+        // Step 1: workout data (±1 day from plan date or today)
+        let wdFromPlan  = await healthReader.workoutData(sport: workout.sport, on: planDate)
+        let wdFromToday = wdFromPlan == nil && planDate != today
+            ? await healthReader.workoutData(sport: workout.sport, on: today)
+            : nil
+        let wd = wdFromPlan ?? wdFromToday
+
+        // Step 2: wellness in parallel
+        let workoutEnd = wd?.endTime ?? Calendar.current.date(byAdding: .hour, value: 20, to: wellnessDate) ?? wellnessDate
+        async let hrv       = healthReader.hrvOrYesterday(for: wellnessDate)
         async let hrvAfterV = healthReader.hrvAfterWorkout(endTime: workoutEnd)
         async let hrRecov   = healthReader.hrRecovery60s(after: workoutEnd)
-        async let sp        = healthReader.spO2OrYesterday(for: date)
-        async let sl        = healthReader.sleepResult(nightBefore: date)
-        async let rhr       = healthReader.restingHROrYesterday(for: date)
-        let (hrvVal, hrvAfterData, hrRecovVal, spVal, sleepData, restingVal) =
+        async let sp        = healthReader.spO2OrYesterday(for: wellnessDate)
+        async let sl        = healthReader.sleepResult(nightBefore: wellnessDate)
+        async let rhr       = healthReader.restingHROrYesterday(for: wellnessDate)
+
+        let (hrvVal, hrvAfterData, hrRecovVal, spVal, sleepDataToday, restingVal) =
             await (hrv, hrvAfterV, hrRecov, sp, sl, rhr)
+        // Also try yesterday's sleep if today returns nothing
+        var sleepData = sleepDataToday
+        if sleepData == nil && wellnessDate != yesterday {
+            sleepData = await healthReader.sleepResult(nightBefore: yesterday)
+        }
 
         // Auto-fill workout fields
         if let wd = wd {
             if actualDuration.isEmpty { actualDuration = String(Int(wd.durationMin.rounded())) }
-            if actualHR.isEmpty, let h = wd.avgHR { actualHR = "\(h)" }
+            if actualHR.isEmpty, let h = wd.avgHR    { actualHR    = "\(h)" }
             if actualMaxHR.isEmpty, let h = wd.maxHR { actualMaxHR = "\(h)" }
             if distance.isEmpty, let d = wd.distanceM { distance = String(format: "%.0f", d) }
-            if calories.isEmpty, let c = wd.calories { calories = "\(c)" }
+            if calories.isEmpty, let c = wd.calories  { calories = "\(c)" }
             if loadedIntervals.isEmpty && !wd.intervals.isEmpty { loadedIntervals = wd.intervals }
         }
         if hrRecovery.isEmpty, let r = hrRecovVal { hrRecovery = "\(r)" }
 
-        if let v = hrvVal,       hrvBefore.isEmpty   { hrvBefore  = "\(Int(v))" }
-        if let v = hrvAfterData, hrvAfter.isEmpty     { hrvAfter   = "\(Int(v))" }
-        if let v = spVal,        spo2.isEmpty         { spo2       = "\(Int(v))" }
+        if let v = hrvVal,       hrvBefore.isEmpty { hrvBefore = "\(Int(v))" }
+        if let v = hrvAfterData, hrvAfter.isEmpty  { hrvAfter  = "\(Int(v))" }
+        if let v = spVal,        spo2.isEmpty      { spo2      = "\(Int(v))" }
         if let sl = sleepData {
             if sleepHours.isEmpty    { sleepHours    = String(format: "%.1f", sl.totalHours) }
             if sleepDeepHours.isEmpty && sl.deepHours > 0 { sleepDeepHours = String(format: "%.1f", sl.deepHours) }
-            if sleepRemHours.isEmpty  && sl.remHours > 0  { sleepRemHours  = String(format: "%.1f", sl.remHours)  }
+            if sleepRemHours.isEmpty  && sl.remHours  > 0 { sleepRemHours  = String(format: "%.1f", sl.remHours)  }
             if sleepCoreHours.isEmpty && sl.coreHours > 0 { sleepCoreHours = String(format: "%.1f", sl.coreHours) }
             if let hr  = sl.avgHR,  sleepAvgHR.isEmpty { sleepAvgHR = "\(Int(hr))"  }
             if let hrv = sl.avgHRV, sleepHRV.isEmpty   { sleepHRV   = "\(Int(hrv))" }
@@ -722,16 +738,16 @@ struct LogWorkoutSheet: View {
 
         isLoadingHealth = false
         var found: [String] = []
-        if wd != nil        { found.append("тренировка") }
-        if hrvVal != nil    { found.append("HRV") }
-        if spVal != nil     { found.append("SpO2") }
-        if sleepData != nil { found.append("сон") }
+        if wd != nil         { found.append("тренировка") }
+        if hrvVal != nil     { found.append("HRV") }
+        if spVal != nil      { found.append("SpO2") }
+        if sleepData != nil  { found.append("сон") }
         if restingVal != nil { found.append("пульс покоя") }
 
         healthStatus = found.isEmpty
-            ? "Apple Health: нет данных. Убедитесь, что Apple Watch носили в эту дату."
+            ? "Нет данных в Apple Health. Убедитесь что Apple Watch носили и синхронизировали."
             : "Загружено: \(found.joined(separator: ", "))"
-        DispatchQueue.main.asyncAfter(deadline: .now() + 4) { healthStatus = nil }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { healthStatus = nil }
     }
 
     private func save() {

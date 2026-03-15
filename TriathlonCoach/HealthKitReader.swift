@@ -87,22 +87,27 @@ class HealthKitReader: ObservableObject {
         }
     }
 
-    /// Find HKWorkout for a sport type on a given date and extract stats + intervals
+    /// Find HKWorkout for a sport type on a given date (or ±1 day) and extract stats + intervals
     func workoutData(sport: String, on date: Date) async -> WorkoutHealthData? {
-        let (start, end) = dayRange(for: date)
-        let datePred = HKQuery.predicateForSamples(withStart: start, end: end)
-        let actType = hkActivityType(for: sport)
-        let actPred = HKQuery.predicateForWorkouts(with: actType)
-        let pred = NSCompoundPredicate(andPredicateWithSubpredicates: [datePred, actPred])
+        // Search ±1 day to handle plan-date vs actual-date mismatch
+        let cal = Calendar.current
+        let searchStart = cal.date(byAdding: .day, value: -1, to: cal.startOfDay(for: date)) ?? date
+        let searchEnd   = cal.startOfDay(for: date).addingTimeInterval(86400 * 2)
+        let datePred = HKQuery.predicateForSamples(withStart: searchStart, end: searchEnd)
         let sort = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: false)
 
-        let wkt: HKWorkout? = await withCheckedContinuation { cont in
-            let q = HKSampleQuery(sampleType: .workoutType(), predicate: pred,
-                                  limit: 1, sortDescriptors: [sort]) { _, samples, _ in
-                cont.resume(returning: samples?.first as? HKWorkout)
+        // Fetch all workouts in range, then filter by type in code (more reliable than compound predicate)
+        let allWorkouts: [HKWorkout] = await withCheckedContinuation { cont in
+            let q = HKSampleQuery(sampleType: .workoutType(), predicate: datePred,
+                                  limit: 20, sortDescriptors: [sort]) { _, samples, _ in
+                cont.resume(returning: (samples as? [HKWorkout]) ?? [])
             }
             store.execute(q)
         }
+        let actType = hkActivityType(for: sport)
+        // Prefer exact type match on plan date, fall back to any workout that day
+        let wkt = allWorkouts.first { $0.workoutActivityType == actType }
+                  ?? allWorkouts.first
         guard let wkt else { return nil }
 
         let durationMin = wkt.duration / 60
