@@ -30,6 +30,14 @@ struct WorkoutPlanJSON: Codable, Identifiable {
     var sleep_quality: Int?   // 1–5
     var resting_hr: Int?      // утренний пульс покоя (уд/мин)
     var sleep_avg_hr: Int?    // средний пульс во сне (уд/мин)
+    var actual_max_hr: Int?
+    var actual_distance_m: Double?
+    var actual_calories: Int?
+    var actual_intervals: [ActualInterval]?
+    var sleep_deep_hours: Double?
+    var sleep_rem_hours: Double?
+    var sleep_core_hours: Double?
+    var sleep_avg_hrv: Double?
 
     enum CodingKeys: String, CodingKey {
         case title, sport, date, duration_min, target_zone, description
@@ -38,6 +46,8 @@ struct WorkoutPlanJSON: Codable, Identifiable {
         case hrv_before, hrv_after, spo2_percent, hr_recovery_60s
         case rpe_actual, sleep_hours, sleep_quality
         case resting_hr, sleep_avg_hr
+        case actual_max_hr, actual_distance_m, actual_calories, actual_intervals
+        case sleep_deep_hours, sleep_rem_hours, sleep_core_hours, sleep_avg_hrv
     }
 }
 
@@ -49,6 +59,31 @@ struct IntervalJSON: Codable, Identifiable {
 
     enum CodingKeys: String, CodingKey {
         case duration_min, zone, note
+    }
+}
+
+struct ActualInterval: Codable {
+    var number: Int
+    var duration_min: Double
+    var avg_hr: Int?
+    var max_hr: Int?
+    var distance_m: Double?
+
+    var pace_sec_per_km: Double? {
+        guard let d = distance_m, d > 0 else { return nil }
+        return (duration_min * 60) / (d / 1000)
+    }
+    var speed_kmh: Double? {
+        guard let d = distance_m, duration_min > 0 else { return nil }
+        return (d / 1000) / (duration_min / 60)
+    }
+    var paceString: String? {
+        guard let p = pace_sec_per_km else { return nil }
+        return String(format: "%d:%02d /км", Int(p) / 60, Int(p) % 60)
+    }
+    var speedString: String? {
+        guard let s = speed_kmh else { return nil }
+        return String(format: "%.1f км/ч", s)
     }
 }
 

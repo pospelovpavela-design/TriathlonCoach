@@ -9,6 +9,7 @@ struct AnalyticsView: View {
     @State private var showLogSheet = false
     @State private var isGeneratingReport = false
     @State private var reportCopied = false
+    @State private var dayReportCopied: String? = nil
 
     private var referenceDate: Date {
         Calendar.current.date(byAdding: .weekOfYear, value: weekOffset, to: Date()) ?? Date()
@@ -106,16 +107,36 @@ struct AnalyticsView: View {
     // MARK: - Workout list
 
     private var workoutList: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 12) {
             if weekWorkouts.isEmpty {
                 Text("Нет тренировок на этой неделе")
                     .font(.system(size: 15)).foregroundColor(.white.opacity(0.4))
                     .frame(maxWidth: .infinity).padding(.vertical, 40)
             } else {
-                ForEach(weekWorkouts) { workout in
-                    AnalyticsRow(workout: workout) {
-                        selectedWorkout = workout
-                        showLogSheet = true
+                let groups = groupedByDay()
+                ForEach(groups, id: \.date) { group in
+                    VStack(spacing: 6) {
+                        // Day header
+                        HStack {
+                            Text(group.label)
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundColor(.white.opacity(0.45))
+                                .tracking(1)
+                            Spacer()
+                            Button(action: { Task { await copyDayReport(date: group.date, workouts: group.workouts) } }) {
+                                Image(systemName: dayReportCopied == group.date ? "checkmark" : "doc.on.clipboard")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(dayReportCopied == group.date ? .green : .white.opacity(0.3))
+                            }
+                        }
+                        .padding(.horizontal, 4)
+
+                        ForEach(group.workouts) { workout in
+                            AnalyticsRow(workout: workout) {
+                                selectedWorkout = workout
+                                showLogSheet = true
+                            }
+                        }
                     }
                 }
             }
@@ -211,6 +232,65 @@ struct AnalyticsView: View {
         let requestText = "\(summary)\n\nПроанализируй результаты этой недели и составь план тренировок на следующую неделю (\(nextRange))."
         store.pendingPrompt = ClaudeService.buildCopyablePrompt(profile: store.profile, requestText: requestText)
         store.selectedTab = 0
+    }
+
+    // MARK: - Day grouping
+
+    private struct DayGroup {
+        let date: String
+        let label: String
+        let workouts: [WorkoutPlanJSON]
+    }
+
+    private func groupedByDay() -> [DayGroup] {
+        let fmt = DateFormatter()
+        fmt.locale = Locale(identifier: "ru_RU")
+        fmt.dateFormat = "EEE, d MMM"
+        let isoFmt = DateFormatter()
+        isoFmt.locale = Locale(identifier: "en_US_POSIX")
+        isoFmt.dateFormat = "yyyy-MM-dd"
+
+        var seen = [String]()
+        var groups = [DayGroup]()
+        for w in weekWorkouts {
+            let key = w.date
+            if !seen.contains(key) {
+                seen.append(key)
+                let dayW = weekWorkouts.filter { $0.date == key }
+                let label: String
+                if let d = isoFmt.date(from: key) {
+                    label = fmt.string(from: d).capitalized
+                } else { label = key }
+                groups.append(DayGroup(date: key, label: label, workouts: dayW))
+            }
+        }
+        return groups.sorted { $0.date < $1.date }
+    }
+
+    private func copyDayReport(date: String, workouts: [WorkoutPlanJSON]) async {
+        let isoFmt = DateFormatter()
+        isoFmt.locale = Locale(identifier: "en_US_POSIX")
+        isoFmt.dateFormat = "yyyy-MM-dd"
+        guard let d = isoFmt.date(from: date) else { return }
+
+        async let sleepData = healthReader.sleepResult(nightBefore: d)
+        async let hrv       = healthReader.hrvOrYesterday(for: d)
+        async let spo2      = healthReader.spO2OrYesterday(for: d)
+        async let rhr       = healthReader.restingHROrYesterday(for: d)
+        let (sleep, hrvVal, spo2Val, rhrVal) = await (sleepData, hrv, spo2, rhr)
+
+        let report = ReportBuilder.dayReport(
+            date: d,
+            workouts: workouts,
+            profile: store.profile,
+            sleep: sleep,
+            hrv: hrvVal,
+            spo2: spo2Val,
+            restingHR: rhrVal
+        )
+        UIPasteboard.general.string = report
+        dayReportCopied = date
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { dayReportCopied = nil }
     }
 }
 
@@ -329,6 +409,13 @@ struct LogWorkoutSheet: View {
     @State private var sleepQuality   = 3
     @State private var hasSleepQuality = false
 
+    // Additional new fields
+    @State private var actualMaxHR     = ""
+    @State private var distance        = ""
+    @State private var calories        = ""
+    @State private var sleepHRV        = ""
+    @State private var loadedIntervals: [HealthKitReader.WorkoutHealthData.Interval] = []
+
     @State private var isLoadingHealth = false
     @State private var healthStatus: String? = nil
 
@@ -369,6 +456,17 @@ struct LogWorkoutSheet: View {
                             }
                             Spacer()
                         }
+                        HStack(spacing: 12) {
+                            inputField("Макс. пульс", hint: "уд/мин", value: $actualMaxHR)
+                                .keyboardType(.numberPad)
+                            inputField("Дистанция (м)", hint: "напр. 10000", value: $distance)
+                                .keyboardType(.numberPad)
+                        }
+                        HStack(spacing: 12) {
+                            inputField("Калории (ккал)", hint: "напр. 450", value: $calories)
+                                .keyboardType(.numberPad)
+                            Spacer()
+                        }
 
                         // Recovery — with HealthKit auto-read
                         sectionHeader("Восстановление")
@@ -378,6 +476,45 @@ struct LogWorkoutSheet: View {
                                 .font(.system(size: 12)).foregroundColor(.green)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
+
+                        // Loaded intervals display
+                        if !loadedIntervals.isEmpty {
+                            sectionHeader("Интервалы (из Apple Watch)")
+                            VStack(spacing: 6) {
+                                ForEach(loadedIntervals, id: \.number) { iv in
+                                    HStack(spacing: 8) {
+                                        Text("#\(iv.number)")
+                                            .font(.system(size: 12, weight: .bold))
+                                            .foregroundColor(.blue)
+                                            .frame(width: 28)
+                                        Text(String(format: "%.1f мин", iv.durationMin))
+                                            .font(.system(size: 12))
+                                            .foregroundColor(.white.opacity(0.7))
+                                            .frame(width: 60, alignment: .leading)
+                                        if let hr = iv.avgHR {
+                                            Text("♥ \(hr)")
+                                                .font(.system(size: 12, weight: .medium))
+                                                .foregroundColor(.red.opacity(0.85))
+                                        }
+                                        if let p = iv.paceString {
+                                            Text(p).font(.system(size: 12)).foregroundColor(.cyan.opacity(0.8))
+                                        } else if let s = iv.speedString {
+                                            Text(s).font(.system(size: 12)).foregroundColor(.cyan.opacity(0.8))
+                                        }
+                                        Spacer()
+                                        if let maxHR = iv.maxHR {
+                                            Text("макс \(maxHR)")
+                                                .font(.system(size: 11))
+                                                .foregroundColor(.orange.opacity(0.7))
+                                        }
+                                    }
+                                    .padding(.horizontal, 10).padding(.vertical, 6)
+                                    .background(Color.white.opacity(0.04))
+                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                                }
+                            }
+                        }
+
                         HStack(spacing: 12) {
                             inputField("HRV до (мс)", hint: "напр. 52", value: $hrvBefore)
                                 .keyboardType(.numberPad)
@@ -402,6 +539,11 @@ struct LogWorkoutSheet: View {
                         HStack(spacing: 12) {
                             inputField("Часов сна", hint: "напр. 7.5", value: $sleepHours)
                                 .keyboardType(.decimalPad)
+                            Spacer()
+                        }
+                        HStack(spacing: 12) {
+                            inputField("HRV во сне (мс)", hint: "напр. 48", value: $sleepHRV)
+                                .keyboardType(.numberPad)
                             Spacer()
                         }
                         VStack(alignment: .leading, spacing: 6) {
@@ -510,6 +652,21 @@ struct LogWorkoutSheet: View {
         sleepAvgHR     = workout.sleep_avg_hr.map { "\($0)" } ?? ""
         sleepHours     = workout.sleep_hours.map { String(format: "%.1f", $0) } ?? ""
         if let sq = workout.sleep_quality { sleepQuality = sq; hasSleepQuality = true }
+        actualMaxHR = workout.actual_max_hr.map { "\($0)" } ?? ""
+        distance    = workout.actual_distance_m.map { String(format: "%.0f", $0) } ?? ""
+        calories    = workout.actual_calories.map { "\($0)" } ?? ""
+        sleepHRV    = workout.sleep_avg_hrv.map { String(format: "%.0f", $0) } ?? ""
+        if let ints = workout.actual_intervals {
+            loadedIntervals = ints.map {
+                HealthKitReader.WorkoutHealthData.Interval(
+                    number: $0.number,
+                    durationMin: $0.duration_min,
+                    avgHR: $0.avg_hr,
+                    maxHR: $0.max_hr,
+                    distanceM: $0.distance_m
+                )
+            }
+        }
     }
 
     private func readFromHealth() async {
@@ -519,27 +676,50 @@ struct LogWorkoutSheet: View {
         }
         isLoadingHealth = true
 
-        async let h   = healthReader.hrvOrYesterday(for: date)
-        async let s   = healthReader.spO2OrYesterday(for: date)
-        async let sl  = healthReader.sleepResult(nightBefore: date)
-        async let rhr = healthReader.restingHROrYesterday(for: date)
-        async let shr = healthReader.sleepHR(nightBefore: date)
+        // Workout data (duration, HR, intervals)
+        async let wkData   = healthReader.workoutData(sport: workout.sport, on: date)
+        async let hrv      = healthReader.hrvOrYesterday(for: date)
+        async let hrvAfterVal = healthReader.hrvAfterWorkout(endTime: Calendar.current.date(byAdding: .hour, value: 20, to: date) ?? date)
+        async let sp       = healthReader.spO2OrYesterday(for: date)
+        async let sl       = healthReader.sleepResult(nightBefore: date)
+        async let rhr      = healthReader.restingHROrYesterday(for: date)
 
-        let (hrv, sp, sleepData, resting, sleepHR) = await (h, s, sl, rhr, shr)
+        let (wd, hrvVal, hrvAfterData, spVal, sleepData, restingVal) = await (wkData, hrv, hrvAfterVal, sp, sl, rhr)
 
-        if let v = hrv,       hrvBefore.isEmpty   { hrvBefore   = "\(Int(v))" }
-        if let v = sp,        spo2.isEmpty         { spo2        = "\(Int(v))" }
-        if let v = sleepData, sleepHours.isEmpty   { sleepHours  = String(format: "%.1f", v.totalHours) }
-        if let v = resting,   restingHR.isEmpty    { restingHR   = "\(Int(v))" }
-        if let v = sleepHR,   sleepAvgHR.isEmpty   { sleepAvgHR  = "\(Int(v))" }
+        // Auto-fill workout fields
+        if let wd = wd {
+            if actualDuration.isEmpty { actualDuration = String(Int(wd.durationMin.rounded())) }
+            if actualHR.isEmpty, let h = wd.avgHR { actualHR = "\(h)" }
+            if actualMaxHR.isEmpty, let h = wd.maxHR { actualMaxHR = "\(h)" }
+            if distance.isEmpty, let d = wd.distanceM { distance = String(format: "%.0f", d) }
+            if calories.isEmpty, let c = wd.calories { calories = "\(c)" }
+            // HR recovery from the workout's end time
+            if hrRecovery.isEmpty {
+                if let rec = await healthReader.hrRecovery60s(after: wd.endTime) {
+                    hrRecovery = "\(rec)"
+                }
+            }
+            // Store intervals
+            if loadedIntervals.isEmpty && !wd.intervals.isEmpty {
+                loadedIntervals = wd.intervals
+            }
+        }
+
+        if let v = hrvVal,        hrvBefore.isEmpty   { hrvBefore  = "\(Int(v))" }
+        if let v = hrvAfterData,  hrvAfter.isEmpty     { hrvAfter   = "\(Int(v))" }
+        if let v = spVal,         spo2.isEmpty         { spo2       = "\(Int(v))" }
+        if let v = sleepData,     sleepHours.isEmpty   { sleepHours = String(format: "%.1f", v.totalHours) }
+        if let v = sleepData?.avgHR, sleepAvgHR.isEmpty { sleepAvgHR = "\(Int(v))" }
+        if let v = sleepData?.avgHRV, sleepHRV.isEmpty  { sleepHRV   = "\(Int(v))" }
+        if let v = restingVal,    restingHR.isEmpty    { restingHR  = "\(Int(v))" }
 
         isLoadingHealth = false
         var found: [String] = []
-        if hrv       != nil { found.append("HRV") }
-        if sp        != nil { found.append("SpO2") }
-        if sleepData != nil { found.append("сон") }
-        if resting   != nil { found.append("пульс покоя") }
-        if sleepHR   != nil { found.append("пульс во сне") }
+        if wd != nil          { found.append("тренировка") }
+        if hrvVal != nil      { found.append("HRV") }
+        if spVal != nil       { found.append("SpO2") }
+        if sleepData != nil   { found.append("сон") }
+        if restingVal != nil  { found.append("пульс покоя") }
 
         if found.isEmpty {
             healthStatus = "Apple Health: нет данных. Убедитесь, что Apple Watch носили в эту дату."
@@ -563,6 +743,17 @@ struct LogWorkoutSheet: View {
         workout.sleep_avg_hr       = Int(sleepAvgHR)
         workout.sleep_hours        = Double(sleepHours)
         workout.sleep_quality      = hasSleepQuality ? sleepQuality : nil
+        workout.actual_max_hr      = Int(actualMaxHR)
+        workout.actual_distance_m  = Double(distance)
+        workout.actual_calories    = Int(calories)
+        workout.sleep_avg_hrv      = Double(sleepHRV)
+        workout.sleep_deep_hours   = nil  // populated from sleepData separately
+        if !loadedIntervals.isEmpty {
+            workout.actual_intervals = loadedIntervals.map {
+                ActualInterval(number: $0.number, duration_min: $0.durationMin,
+                               avg_hr: $0.avgHR, max_hr: $0.maxHR, distance_m: $0.distanceM)
+            }
+        }
         onSave(workout)
         dismiss()
     }

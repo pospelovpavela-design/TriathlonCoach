@@ -49,6 +49,7 @@ struct ReportBuilder {
         if let hr = w.actual_avg_hr {
             L.append("━━━ АНАЛИЗ ПУЛЬСА ━━━")
             L.append("Средний пульс: \(hr) уд/мин")
+            if let mx = w.actual_max_hr { L.append("Макс. пульс: \(mx) уд/мин") }
             if let z = zone {
                 L.append("Целевой диапазон: \(z.displayRange)")
                 if hr < z.min {
@@ -62,14 +63,61 @@ struct ReportBuilder {
             L.append("")
         }
 
-        // Intervals
-        if !w.intervals.isEmpty {
-            L.append("━━━ ИНТЕРВАЛЫ ━━━")
-            for (i, iv) in w.intervals.enumerated() {
-                let z = HRZone.zone(for: iv.zone)
-                L.append("\(i + 1). \(iv.note)  |  \(iv.duration_min) мин  |  \(iv.zone) \(z?.displayRange ?? "")")
+        // Distance / pace
+        if let distM = w.actual_distance_m, distM > 0 {
+            L.append("━━━ ДИСТАНЦИЯ И ТЕМП ━━━")
+            if distM >= 1000 {
+                L.append(String(format: "Дистанция: %.2f км", distM / 1000))
+            } else {
+                L.append(String(format: "Дистанция: %.0f м", distM))
             }
-            L.append("Итого по интервалам: \(w.intervals.reduce(0) { $0 + $1.duration_min }) мин")
+            if let dur = w.actual_duration_min ?? (w.completed ? w.duration_min : nil) {
+                let paceSecKm = (Double(dur) * 60) / (distM / 1000)
+                let speedKmh  = (distM / 1000) / (Double(dur) / 60)
+                switch w.sport {
+                case "run", "run_indoor":
+                    L.append(String(format: "Средний темп: %d:%02d /км", Int(paceSecKm) / 60, Int(paceSecKm) % 60))
+                case "bike", "bike_indoor":
+                    L.append(String(format: "Средняя скорость: %.1f км/ч", speedKmh))
+                case "swim":
+                    let pace100m = (Double(dur) * 60) / (distM / 100)
+                    L.append(String(format: "Средний темп: %d:%02d /100м", Int(pace100m) / 60, Int(pace100m) % 60))
+                default: break
+                }
+            }
+            if let cal = w.actual_calories { L.append("Калории: \(cal) ккал") }
+            L.append("")
+        }
+
+        // Planned intervals + actual intervals
+        let hasPlannedIntervals = !w.intervals.isEmpty
+        let hasActualIntervals  = !(w.actual_intervals?.isEmpty ?? true)
+        if hasPlannedIntervals || hasActualIntervals {
+            L.append("━━━ ИНТЕРВАЛЫ ━━━")
+            if hasPlannedIntervals {
+                L.append("— ПЛАН —")
+                for (i, iv) in w.intervals.enumerated() {
+                    let z = HRZone.zone(for: iv.zone)
+                    L.append("\(i + 1). \(iv.note)  |  \(iv.duration_min) мин  |  \(iv.zone) \(z?.displayRange ?? "")")
+                }
+                L.append("Итого план: \(w.intervals.reduce(0) { $0 + $1.duration_min }) мин")
+            }
+            if hasActualIntervals, let actInts = w.actual_intervals {
+                L.append("— ФАКТ —")
+                for iv in actInts {
+                    var line = "\(iv.number). \(String(format: "%.1f мин", iv.duration_min))"
+                    if let hr = iv.avg_hr { line += "  ♥ ср. \(hr)" }
+                    if let mhr = iv.max_hr { line += " / макс \(mhr)" }
+                    if let p = iv.paceString { line += "  \(p)" }
+                    else if let s = iv.speedString { line += "  \(s)" }
+                    if let d = iv.distance_m {
+                        line += d >= 1000
+                            ? String(format: "  %.2f км", d / 1000)
+                            : String(format: "  %.0f м", d)
+                    }
+                    L.append(line)
+                }
+            }
             L.append("")
         }
 
@@ -107,9 +155,17 @@ struct ReportBuilder {
         }
 
         // Sleep
-        if let sh = w.sleep_hours {
+        let hasSleepInfo = w.sleep_hours != nil || w.sleep_deep_hours != nil
+        if hasSleepInfo {
             L.append("━━━ СОН НАКАНУНЕ ━━━")
-            L.append("Продолжительность: \(String(format: "%.1f", sh)) ч  \(sleepLabel(sh))")
+            if let sh = w.sleep_hours {
+                L.append("Общее время: \(String(format: "%.1f", sh)) ч  \(sleepLabel(sh))")
+            }
+            if let d = w.sleep_deep_hours, d > 0 { L.append(String(format: "  Глубокий: %.1f ч", d)) }
+            if let r = w.sleep_rem_hours, r > 0   { L.append(String(format: "  REM: %.1f ч", r)) }
+            if let c = w.sleep_core_hours, c > 0  { L.append(String(format: "  Core/light: %.1f ч", c)) }
+            if let shr = w.sleep_avg_hr            { L.append("  Пульс во сне (ср.): \(shr) уд/мин") }
+            if let shrv = w.sleep_avg_hrv          { L.append("  HRV во сне (ср.): \(Int(shrv)) мс") }
             if let sq = w.sleep_quality {
                 let stars = String(repeating: "★", count: sq) + String(repeating: "☆", count: 5 - sq)
                 L.append("Качество (субъективно): \(sq)/5  \(stars)")
@@ -230,7 +286,14 @@ struct ReportBuilder {
                     L.append(dur)
                     var hr = "  Пульс: цель \(w.target_zone)"
                     if let h = w.actual_avg_hr { hr += " / ср. факт \(h) уд/мин" }
+                    if let mx = w.actual_max_hr { hr += " / макс \(mx) уд/мин" }
                     L.append(hr)
+                    if let distM = w.actual_distance_m, distM > 0 {
+                        let distStr = distM >= 1000
+                            ? String(format: "%.2f км", distM / 1000)
+                            : String(format: "%.0f м", distM)
+                        L.append("  Дистанция: \(distStr)")
+                    }
                     if let rpeT = w.rpe_target, let rpeA = w.rpe_actual {
                         L.append("  RPE: план \(rpeT)/10 / факт \(rpeA)/10")
                     } else if let rpe = w.rpe_target {
@@ -336,6 +399,119 @@ struct ReportBuilder {
               "  }",
               "]",
               "```"]
+
+        return L.joined(separator: "\n")
+    }
+
+    // MARK: - Per-day report
+
+    static func dayReport(
+        date: Date,
+        workouts: [WorkoutPlanJSON],
+        profile: AthleteProfile,
+        sleep: HealthKitReader.SleepResult?,
+        hrv: Double?,
+        spo2: Double?,
+        restingHR: Double?
+    ) -> String {
+        var L: [String] = []
+        let fmt = DateFormatter()
+        fmt.locale = Locale(identifier: "ru_RU")
+        fmt.dateFormat = "EEEE, d MMMM yyyy"
+        let dayLabel = fmt.string(from: date).capitalized
+
+        L += ["════════════════════════════════════════",
+              "ОТЧЁТ ЗА ДЕНЬ: \(dayLabel)",
+              "════════════════════════════════════════", ""]
+
+        L.append("Атлет: \(profile.name)")
+        L.append("")
+
+        // Morning wellness
+        let hasMorning = hrv != nil || restingHR != nil || spo2 != nil || sleep != nil
+        if hasMorning {
+            L.append("━━━ УТРЕННЕЕ СОСТОЯНИЕ ━━━")
+            if let v = hrv       { L.append("HRV утром: \(Int(v)) мс  \(hrvQuality(Int(v)))") }
+            if let v = restingHR { L.append("Пульс покоя: \(Int(v)) уд/мин  \(restingHRQuality(Int(v)))") }
+            if let v = spo2      { L.append("SpO2: \(Int(v))%  \(spO2Quality(v))") }
+            if let s = sleep {
+                L.append(String(format: "Сон накануне: %.1f ч  %@", s.totalHours, sleepLabel(s.totalHours)))
+                if s.deepHours > 0 { L.append(String(format: "  Глубокий: %.1f ч", s.deepHours)) }
+                if s.remHours  > 0 { L.append(String(format: "  REM: %.1f ч", s.remHours)) }
+                if s.coreHours > 0 { L.append(String(format: "  Core: %.1f ч", s.coreHours)) }
+                if let hr = s.avgHR  { L.append("  Пульс во сне: \(Int(hr)) уд/мин") }
+                if let hv = s.avgHRV { L.append("  HRV во сне: \(Int(hv)) мс") }
+            }
+            L.append("")
+        }
+
+        // Workouts
+        let trainable = workouts.filter { $0.sport != "rest" }
+        if trainable.isEmpty {
+            L.append("━━━ ТРЕНИРОВКИ ━━━")
+            L.append("День отдыха")
+            L.append("")
+        } else {
+            for w in trainable {
+                L.append("━━━ \(sportEmoji(w.sport)) \(sportName(w.sport).uppercased()): \(w.title) ━━━")
+                L.append("Статус: \(w.completed ? "✅ Выполнено" : "⬜ Не выполнено")")
+                var dur = "Длит.: план \(w.duration_min) мин"
+                if let a = w.actual_duration_min { dur += " / факт \(a) мин" }
+                L.append(dur)
+                if let hr = w.actual_avg_hr {
+                    var hrLine = "Ср. пульс: \(hr) уд/мин"
+                    if let mx = w.actual_max_hr { hrLine += " / макс \(mx)" }
+                    L.append(hrLine)
+                }
+                if let distM = w.actual_distance_m, distM > 0 {
+                    let distStr = distM >= 1000
+                        ? String(format: "%.2f км", distM / 1000)
+                        : String(format: "%.0f м", distM)
+                    L.append("Дистанция: \(distStr)")
+                    if let dur2 = w.actual_duration_min, dur2 > 0 {
+                        switch w.sport {
+                        case "run", "run_indoor":
+                            let p = (Double(dur2) * 60) / (distM / 1000)
+                            L.append(String(format: "Темп: %d:%02d /км", Int(p) / 60, Int(p) % 60))
+                        case "bike", "bike_indoor":
+                            let s = (distM / 1000) / (Double(dur2) / 60)
+                            L.append(String(format: "Скорость: %.1f км/ч", s))
+                        default: break
+                        }
+                    }
+                }
+                if let cal = w.actual_calories { L.append("Калории: \(cal) ккал") }
+                if let rpe = w.rpe_actual      { L.append("RPE: \(rpe)/10") }
+                if let rec = w.hr_recovery_60s { L.append("Восст. ЧСС 60с: -\(rec) уд/мин  \(hrRecoveryQuality(rec))") }
+                if let hb = w.hrv_before       { L.append("HRV до: \(hb) мс") }
+                if let ha = w.hrv_after        { L.append("HRV после: \(ha) мс") }
+                if let ints = w.actual_intervals, !ints.isEmpty {
+                    L.append("Интервалы:")
+                    for iv in ints {
+                        var line = "  \(iv.number). \(String(format: "%.1fм", iv.duration_min))"
+                        if let h = iv.avg_hr { line += " ♥\(h)" }
+                        if let p = iv.paceString { line += " \(p)" }
+                        else if let s = iv.speedString { line += " \(s)" }
+                        L.append(line)
+                    }
+                }
+                if !w.notes_after.isEmpty { L.append("Заметки: \(w.notes_after)") }
+                L.append("")
+            }
+        }
+
+        // Claude prompt
+        L += ["════════════════════════════════════════",
+              "ЗАПРОС К ТРЕНЕРУ-ИИ:", ""]
+        L.append("Ты — профессиональный тренер по триатлону. Проанализируй этот тренировочный день атлета \(profile.name).")
+        L.append("")
+        L += zoneReference()
+        L.append("")
+        L += ["Ответь:",
+              "1. Как прошёл день — выполнение плана, качество тренировки?",
+              "2. Что говорят данные восстановления о состоянии атлета?",
+              "3. Рекомендации на следующие 24–48 часов.",
+              "4. Нужна ли корректировка плана?"]
 
         return L.joined(separator: "\n")
     }
