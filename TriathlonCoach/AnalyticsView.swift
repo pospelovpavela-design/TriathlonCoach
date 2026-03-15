@@ -414,6 +414,9 @@ struct LogWorkoutSheet: View {
     @State private var distance        = ""
     @State private var calories        = ""
     @State private var sleepHRV        = ""
+    @State private var sleepDeepHours  = ""
+    @State private var sleepRemHours   = ""
+    @State private var sleepCoreHours  = ""
     @State private var loadedIntervals: [HealthKitReader.WorkoutHealthData.Interval] = []
 
     @State private var isLoadingHealth = false
@@ -652,10 +655,13 @@ struct LogWorkoutSheet: View {
         sleepAvgHR     = workout.sleep_avg_hr.map { "\($0)" } ?? ""
         sleepHours     = workout.sleep_hours.map { String(format: "%.1f", $0) } ?? ""
         if let sq = workout.sleep_quality { sleepQuality = sq; hasSleepQuality = true }
-        actualMaxHR = workout.actual_max_hr.map { "\($0)" } ?? ""
-        distance    = workout.actual_distance_m.map { String(format: "%.0f", $0) } ?? ""
-        calories    = workout.actual_calories.map { "\($0)" } ?? ""
-        sleepHRV    = workout.sleep_avg_hrv.map { String(format: "%.0f", $0) } ?? ""
+        actualMaxHR    = workout.actual_max_hr.map { "\($0)" } ?? ""
+        distance       = workout.actual_distance_m.map { String(format: "%.0f", $0) } ?? ""
+        calories       = workout.actual_calories.map { "\($0)" } ?? ""
+        sleepHRV       = workout.sleep_avg_hrv.map { String(format: "%.0f", $0) } ?? ""
+        sleepDeepHours = workout.sleep_deep_hours.map { String(format: "%.1f", $0) } ?? ""
+        sleepRemHours  = workout.sleep_rem_hours.map  { String(format: "%.1f", $0) } ?? ""
+        sleepCoreHours = workout.sleep_core_hours.map { String(format: "%.1f", $0) } ?? ""
         if let ints = workout.actual_intervals {
             loadedIntervals = ints.map {
                 HealthKitReader.WorkoutHealthData.Interval(
@@ -676,15 +682,19 @@ struct LogWorkoutSheet: View {
         }
         isLoadingHealth = true
 
-        // Workout data (duration, HR, intervals)
-        async let wkData   = healthReader.workoutData(sport: workout.sport, on: date)
-        async let hrv      = healthReader.hrvOrYesterday(for: date)
-        async let hrvAfterVal = healthReader.hrvAfterWorkout(endTime: Calendar.current.date(byAdding: .hour, value: 20, to: date) ?? date)
-        async let sp       = healthReader.spO2OrYesterday(for: date)
-        async let sl       = healthReader.sleepResult(nightBefore: date)
-        async let rhr      = healthReader.restingHROrYesterday(for: date)
+        // Step 1: get workout data first (need endTime for HRV-after and HR-recovery)
+        let wd = await healthReader.workoutData(sport: workout.sport, on: date)
 
-        let (wd, hrvVal, hrvAfterData, spVal, sleepData, restingVal) = await (wkData, hrv, hrvAfterVal, sp, sl, rhr)
+        // Step 2: everything else in parallel, using real workout endTime if available
+        let workoutEnd = wd?.endTime ?? Calendar.current.date(byAdding: .hour, value: 20, to: date) ?? date
+        async let hrv       = healthReader.hrvOrYesterday(for: date)
+        async let hrvAfterV = healthReader.hrvAfterWorkout(endTime: workoutEnd)
+        async let hrRecov   = healthReader.hrRecovery60s(after: workoutEnd)
+        async let sp        = healthReader.spO2OrYesterday(for: date)
+        async let sl        = healthReader.sleepResult(nightBefore: date)
+        async let rhr       = healthReader.restingHROrYesterday(for: date)
+        let (hrvVal, hrvAfterData, hrRecovVal, spVal, sleepData, restingVal) =
+            await (hrv, hrvAfterV, hrRecov, sp, sl, rhr)
 
         // Auto-fill workout fields
         if let wd = wd {
@@ -693,39 +703,34 @@ struct LogWorkoutSheet: View {
             if actualMaxHR.isEmpty, let h = wd.maxHR { actualMaxHR = "\(h)" }
             if distance.isEmpty, let d = wd.distanceM { distance = String(format: "%.0f", d) }
             if calories.isEmpty, let c = wd.calories { calories = "\(c)" }
-            // HR recovery from the workout's end time
-            if hrRecovery.isEmpty {
-                if let rec = await healthReader.hrRecovery60s(after: wd.endTime) {
-                    hrRecovery = "\(rec)"
-                }
-            }
-            // Store intervals
-            if loadedIntervals.isEmpty && !wd.intervals.isEmpty {
-                loadedIntervals = wd.intervals
-            }
+            if loadedIntervals.isEmpty && !wd.intervals.isEmpty { loadedIntervals = wd.intervals }
         }
+        if hrRecovery.isEmpty, let r = hrRecovVal { hrRecovery = "\(r)" }
 
-        if let v = hrvVal,        hrvBefore.isEmpty   { hrvBefore  = "\(Int(v))" }
-        if let v = hrvAfterData,  hrvAfter.isEmpty     { hrvAfter   = "\(Int(v))" }
-        if let v = spVal,         spo2.isEmpty         { spo2       = "\(Int(v))" }
-        if let v = sleepData,     sleepHours.isEmpty   { sleepHours = String(format: "%.1f", v.totalHours) }
-        if let v = sleepData?.avgHR, sleepAvgHR.isEmpty { sleepAvgHR = "\(Int(v))" }
-        if let v = sleepData?.avgHRV, sleepHRV.isEmpty  { sleepHRV   = "\(Int(v))" }
-        if let v = restingVal,    restingHR.isEmpty    { restingHR  = "\(Int(v))" }
+        if let v = hrvVal,       hrvBefore.isEmpty   { hrvBefore  = "\(Int(v))" }
+        if let v = hrvAfterData, hrvAfter.isEmpty     { hrvAfter   = "\(Int(v))" }
+        if let v = spVal,        spo2.isEmpty         { spo2       = "\(Int(v))" }
+        if let sl = sleepData {
+            if sleepHours.isEmpty    { sleepHours    = String(format: "%.1f", sl.totalHours) }
+            if sleepDeepHours.isEmpty && sl.deepHours > 0 { sleepDeepHours = String(format: "%.1f", sl.deepHours) }
+            if sleepRemHours.isEmpty  && sl.remHours > 0  { sleepRemHours  = String(format: "%.1f", sl.remHours)  }
+            if sleepCoreHours.isEmpty && sl.coreHours > 0 { sleepCoreHours = String(format: "%.1f", sl.coreHours) }
+            if let hr  = sl.avgHR,  sleepAvgHR.isEmpty { sleepAvgHR = "\(Int(hr))"  }
+            if let hrv = sl.avgHRV, sleepHRV.isEmpty   { sleepHRV   = "\(Int(hrv))" }
+        }
+        if let v = restingVal, restingHR.isEmpty { restingHR = "\(Int(v))" }
 
         isLoadingHealth = false
         var found: [String] = []
-        if wd != nil          { found.append("тренировка") }
-        if hrvVal != nil      { found.append("HRV") }
-        if spVal != nil       { found.append("SpO2") }
-        if sleepData != nil   { found.append("сон") }
-        if restingVal != nil  { found.append("пульс покоя") }
+        if wd != nil        { found.append("тренировка") }
+        if hrvVal != nil    { found.append("HRV") }
+        if spVal != nil     { found.append("SpO2") }
+        if sleepData != nil { found.append("сон") }
+        if restingVal != nil { found.append("пульс покоя") }
 
-        if found.isEmpty {
-            healthStatus = "Apple Health: нет данных. Убедитесь, что Apple Watch носили в эту дату."
-        } else {
-            healthStatus = "Загружено: \(found.joined(separator: ", "))"
-        }
+        healthStatus = found.isEmpty
+            ? "Apple Health: нет данных. Убедитесь, что Apple Watch носили в эту дату."
+            : "Загружено: \(found.joined(separator: ", "))"
         DispatchQueue.main.asyncAfter(deadline: .now() + 4) { healthStatus = nil }
     }
 
@@ -747,7 +752,9 @@ struct LogWorkoutSheet: View {
         workout.actual_distance_m  = Double(distance)
         workout.actual_calories    = Int(calories)
         workout.sleep_avg_hrv      = Double(sleepHRV)
-        workout.sleep_deep_hours   = nil  // populated from sleepData separately
+        workout.sleep_deep_hours   = Double(sleepDeepHours)
+        workout.sleep_rem_hours    = Double(sleepRemHours)
+        workout.sleep_core_hours   = Double(sleepCoreHours)
         if !loadedIntervals.isEmpty {
             workout.actual_intervals = loadedIntervals.map {
                 ActualInterval(number: $0.number, duration_min: $0.durationMin,
