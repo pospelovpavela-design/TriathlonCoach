@@ -81,7 +81,7 @@ class HealthKitReader: ObservableObject {
     func sleepHR(nightBefore date: Date) async -> Double? {
         let cal = Calendar.current
         let dayStart = cal.startOfDay(for: date)
-        guard let prevEvening = cal.date(byAdding: .hour, value: -18, to: dayStart) else { return nil }
+        guard let prevEvening = cal.date(byAdding: .hour, value: -6, to: dayStart) else { return nil }
         let morning = dayStart.addingTimeInterval(3600 * 12)
 
         // 1. Get asleep intervals
@@ -137,7 +137,7 @@ class HealthKitReader: ObservableObject {
     func sleepResult(nightBefore date: Date) async -> SleepResult? {
         let cal = Calendar.current
         let dayStart = cal.startOfDay(for: date)
-        guard let prevEvening = cal.date(byAdding: .hour, value: -18, to: dayStart) else { return nil }
+        guard let prevEvening = cal.date(byAdding: .hour, value: -6, to: dayStart) else { return nil }
         let morning = dayStart.addingTimeInterval(3600 * 12)
 
         let type = HKCategoryType(.sleepAnalysis)
@@ -178,6 +178,29 @@ class HealthKitReader: ObservableObject {
             day = next
         }
         return results
+    }
+
+    // MARK: - Smart lookups (fallback to adjacent days)
+
+    /// HRV for date, falling back to yesterday if not found (Apple Watch often records HRV at wake-up)
+    func hrvOrYesterday(for date: Date) async -> Double? {
+        if let v = await hrv(for: date) { return v }
+        let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: date) ?? date
+        return await hrv(for: yesterday)
+    }
+
+    /// SpO2 for the night of or before the given date
+    func spO2OrYesterday(for date: Date) async -> Double? {
+        if let v = await spO2Percent(for: date) { return v }
+        let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: date) ?? date
+        return await spO2Percent(for: yesterday)
+    }
+
+    /// Resting HR for date, falling back to yesterday (Apple Health computes it asynchronously)
+    func restingHROrYesterday(for date: Date) async -> Double? {
+        if let v = await restingHR(for: date) { return v }
+        let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: date) ?? date
+        return await restingHR(for: yesterday)
     }
 
     // MARK: - Private helpers

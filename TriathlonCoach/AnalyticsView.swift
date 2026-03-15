@@ -513,13 +513,16 @@ struct LogWorkoutSheet: View {
     }
 
     private func readFromHealth() async {
-        guard let date = workout.parsedDate else { return }
+        guard let date = workout.parsedDate else {
+            healthStatus = "Ошибка: не удалось определить дату тренировки"
+            return
+        }
         isLoadingHealth = true
 
-        async let h   = healthReader.hrv(for: date)
-        async let s   = healthReader.spO2Percent(for: date)
+        async let h   = healthReader.hrvOrYesterday(for: date)
+        async let s   = healthReader.spO2OrYesterday(for: date)
         async let sl  = healthReader.sleepResult(nightBefore: date)
-        async let rhr = healthReader.restingHR(for: date)
+        async let rhr = healthReader.restingHROrYesterday(for: date)
         async let shr = healthReader.sleepHR(nightBefore: date)
 
         let (hrv, sp, sleepData, resting, sleepHR) = await (h, s, sl, rhr, shr)
@@ -531,9 +534,19 @@ struct LogWorkoutSheet: View {
         if let v = sleepHR,   sleepAvgHR.isEmpty   { sleepAvgHR  = "\(Int(v))" }
 
         isLoadingHealth = false
-        let anyFound = hrv != nil || sp != nil || sleepData != nil || resting != nil || sleepHR != nil
-        healthStatus = anyFound ? "Данные загружены из Apple Health" : "Данные в Health не найдены за эту дату"
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { healthStatus = nil }
+        var found: [String] = []
+        if hrv       != nil { found.append("HRV") }
+        if sp        != nil { found.append("SpO2") }
+        if sleepData != nil { found.append("сон") }
+        if resting   != nil { found.append("пульс покоя") }
+        if sleepHR   != nil { found.append("пульс во сне") }
+
+        if found.isEmpty {
+            healthStatus = "Apple Health: нет данных. Убедитесь, что Apple Watch носили в эту дату."
+        } else {
+            healthStatus = "Загружено: \(found.joined(separator: ", "))"
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4) { healthStatus = nil }
     }
 
     private func save() {

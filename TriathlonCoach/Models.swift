@@ -117,6 +117,7 @@ extension WorkoutPlanJSON {
 
     var parsedDate: Date? {
         let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyy-MM-dd"
         return formatter.date(from: String(date.prefix(10)))
     }
