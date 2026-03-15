@@ -7,7 +7,6 @@ struct WeekCalendarView: View {
 
     @State private var weekOffset = 0
     @State private var selectedWorkout: WorkoutPlanJSON?
-    @State private var showDetail = false
     @State private var showFilePicker = false
     @State private var toast: String? = nil
 
@@ -32,7 +31,8 @@ struct WeekCalendarView: View {
                                 day: day,
                                 workouts: store.workouts(forDay: day),
                                 wkManager: wkManager,
-                                onTap: { w in selectedWorkout = w; showDetail = true }
+                                onTap: { w in selectedWorkout = w },
+                                onDelete: { w in store.delete(w) }
                             )
                         }
                         if weekWorkouts.contains(where: { $0.sport != "rest" }) {
@@ -57,14 +57,13 @@ struct WeekCalendarView: View {
             }
         }
         .background(Color(red: 0.04, green: 0.04, blue: 0.06).ignoresSafeArea())
-        .sheet(isPresented: $showDetail) {
-            if let w = selectedWorkout {
-                WorkoutDetailView(
-                    workout: w,
-                    wkManager: wkManager,
-                    onUpdate: { updated in store.update(updated) }
-                )
-            }
+        .sheet(item: $selectedWorkout) { w in
+            WorkoutDetailView(
+                workout: w,
+                wkManager: wkManager,
+                onUpdate: { updated in store.update(updated) },
+                onDelete: { store.delete(w) }
+            )
         }
         .fileImporter(isPresented: $showFilePicker, allowedContentTypes: [.json], allowsMultipleSelection: true) { result in
             if case .success(let urls) = result {
@@ -177,6 +176,7 @@ struct DaySection: View {
     let workouts: [WorkoutPlanJSON]
     let wkManager: WorkoutKitManager
     let onTap: (WorkoutPlanJSON) -> Void
+    let onDelete: (WorkoutPlanJSON) -> Void
 
     private var isToday: Bool { Calendar.current.isDateInToday(day) }
     private var dayLabel: String {
@@ -221,6 +221,11 @@ struct DaySection: View {
                         onSave: { await wkManager.saveWorkout(workout) },
                         onTap: { onTap(workout) }
                     )
+                    .contextMenu {
+                        Button(role: .destructive, action: { onDelete(workout) }) {
+                            Label("Удалить тренировку", systemImage: "trash")
+                        }
+                    }
                     .padding(.horizontal, 16)
                 }
             }

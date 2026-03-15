@@ -12,7 +12,7 @@ class HealthKitReader: ObservableObject {
 
     func requestAuthorization() async {
         guard HKHealthStore.isHealthDataAvailable() else { return }
-        let types: Set<HKObjectType> = [
+        var types: Set<HKObjectType> = [
             HKQuantityType(.heartRateVariabilitySDNN),
             HKQuantityType(.oxygenSaturation),
             HKQuantityType(.heartRate),
@@ -23,7 +23,18 @@ class HealthKitReader: ObservableObject {
             HKQuantityType(.distanceCycling),
             HKQuantityType(.distanceSwimming),
             HKQuantityType(.activeEnergyBurned),
+            // Health tab metrics
+            HKQuantityType(.bodyMass),
+            HKQuantityType(.bloodPressureSystolic),
+            HKQuantityType(.bloodPressureDiastolic),
+            HKQuantityType(.dietaryEnergyConsumed),
+            HKQuantityType(.dietaryProtein),
+            HKQuantityType(.dietaryFatTotal),
+            HKQuantityType(.dietaryCarbohydrates),
         ]
+        if #available(iOS 17, *) {
+            types.insert(HKQuantityType(.appleSleepingWristTemperature))
+        }
         do {
             try await store.requestAuthorization(toShare: Set<HKSampleType>(), read: types)
             isAuthorized = true
@@ -68,6 +79,13 @@ class HealthKitReader: ObservableObject {
         let startTime: Date
         let endTime: Date
         let intervals: [Interval]
+
+        var displayName: String {
+            let fmt = DateFormatter()
+            fmt.locale = Locale(identifier: "ru_RU")
+            fmt.dateFormat = "HH:mm"
+            return String(format: "%.0f мин · %@", durationMin, fmt.string(from: startTime))
+        }
 
         var paceSecPerKm: Double? {
             guard let d = distanceM, d > 0 else { return nil }
@@ -158,6 +176,70 @@ class HealthKitReader: ObservableObject {
                                   distanceM: distanceM, calories: calories,
                                   startTime: wkt.startDate, endTime: wkt.endDate,
                                   intervals: intervals)
+    }
+
+    /// Build WorkoutHealthData from a single HKWorkout
+    private func healthData(from wkt: HKWorkout, sport: String) async -> WorkoutHealthData {
+        let durationMin = wkt.duration / 60
+        let (avgHR, maxHR) = await hrStats(from: wkt.startDate, to: wkt.endDate)
+        let distType = distanceType(for: sport)
+        var distanceM: Double? = nil
+        if let dt = distType {
+            distanceM = await statSum(type: dt, from: wkt.startDate, to: wkt.endDate, unit: .meter())
+        }
+        let cals: Int?
+        if let c = await statSum(type: HKQuantityType(.activeEnergyBurned),
+                                  from: wkt.startDate, to: wkt.endDate, unit: .kilocalorie()) {
+            cals = Int(c.rounded())
+        } else { cals = nil }
+
+        var intervals: [WorkoutHealthData.Interval] = []
+        for (idx, activity) in wkt.workoutActivities.enumerated() {
+            guard let actEnd = activity.endDate else { continue }
+            let dur = actEnd.timeIntervalSince(activity.startDate) / 60
+            guard dur >= 0.4 else { continue }
+            let hrAvg = activity.allStatistics[HKQuantityType(.heartRate)]?
+                .averageQuantity()?.doubleValue(for: HKUnit(from: "count/min"))
+            let hrMax = activity.allStatistics[HKQuantityType(.heartRate)]?
+                .maximumQuantity()?.doubleValue(for: HKUnit(from: "count/min"))
+            var dist: Double? = nil
+            if let dt = distType {
+                dist = activity.allStatistics[dt]?.sumQuantity()?.doubleValue(for: .meter())
+            }
+            intervals.append(WorkoutHealthData.Interval(
+                number: idx + 1, durationMin: dur,
+                avgHR: hrAvg.map { Int($0.rounded()) },
+                maxHR: hrMax.map { Int($0.rounded()) },
+                distanceM: dist
+            ))
+        }
+        return WorkoutHealthData(durationMin: durationMin, avgHR: avgHR, maxHR: maxHR,
+                                  distanceM: distanceM, calories: cals,
+                                  startTime: wkt.startDate, endTime: wkt.endDate,
+                                  intervals: intervals)
+    }
+
+    /// Returns all workouts found in ±1 day of the given date (sorted by start time ascending)
+    func allWorkoutData(sport: String, on date: Date) async -> [WorkoutHealthData] {
+        let cal = Calendar.current
+        let searchStart = cal.date(byAdding: .day, value: -1, to: cal.startOfDay(for: date)) ?? date
+        let searchEnd   = cal.startOfDay(for: date).addingTimeInterval(86400 * 2)
+        let datePred = HKQuery.predicateForSamples(withStart: searchStart, end: searchEnd)
+        let sort = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)
+
+        let hkWorkouts: [HKWorkout] = await withCheckedContinuation { cont in
+            let q = HKSampleQuery(sampleType: .workoutType(), predicate: datePred,
+                                  limit: 20, sortDescriptors: [sort]) { _, samples, _ in
+                cont.resume(returning: (samples as? [HKWorkout]) ?? [])
+            }
+            store.execute(q)
+        }
+        var results: [WorkoutHealthData] = []
+        for wkt in hkWorkouts {
+            let data = await healthData(from: wkt, sport: sport)
+            results.append(data)
+        }
+        return results
     }
 
     // MARK: - HRV
@@ -358,6 +440,58 @@ class HealthKitReader: ObservableObject {
         if let v = await restingHR(for: date) { return v }
         let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: date) ?? date
         return await restingHR(for: yesterday)
+    }
+
+    // MARK: - Body Weight
+
+    func bodyWeight(for date: Date) async -> Double? {
+        let (start, end) = dayRange(for: date)
+        return await latestSample(type: HKQuantityType(.bodyMass), from: start, to: end,
+                                   unit: .gramUnit(with: .kilo))
+    }
+
+    // MARK: - Blood Pressure
+
+    func bloodPressure(for date: Date) async -> (systolic: Int?, diastolic: Int?) {
+        let (start, end) = dayRange(for: date)
+        let mmHg = HKUnit.millimeterOfMercury()
+        async let sys = latestSample(type: HKQuantityType(.bloodPressureSystolic), from: start, to: end, unit: mmHg)
+        async let dia = latestSample(type: HKQuantityType(.bloodPressureDiastolic), from: start, to: end, unit: mmHg)
+        let (s, d) = await (sys, dia)
+        return (s.map { Int($0.rounded()) }, d.map { Int($0.rounded()) })
+    }
+
+    // MARK: - Wrist Temperature
+
+    func wristTemperatureDelta(for date: Date) async -> Double? {
+        guard #available(iOS 17, *) else { return nil }
+        let (start, end) = dayRange(for: date)
+        return await latestSample(type: HKQuantityType(.appleSleepingWristTemperature),
+                                   from: start, to: end, unit: .degreeCelsius())
+    }
+
+    // MARK: - Nutrition
+
+    struct NutritionData {
+        let calories: Int?
+        let proteinG: Double?
+        let fatG: Double?
+        let carbsG: Double?
+    }
+
+    func nutrition(for date: Date) async -> NutritionData {
+        let (start, end) = dayRange(for: date)
+        async let cal   = statSum(type: HKQuantityType(.dietaryEnergyConsumed), from: start, to: end, unit: .kilocalorie())
+        async let prot  = statSum(type: HKQuantityType(.dietaryProtein),        from: start, to: end, unit: .gram())
+        async let fat   = statSum(type: HKQuantityType(.dietaryFatTotal),        from: start, to: end, unit: .gram())
+        async let carbs = statSum(type: HKQuantityType(.dietaryCarbohydrates),   from: start, to: end, unit: .gram())
+        let (c, p, f, ch) = await (cal, prot, fat, carbs)
+        return NutritionData(
+            calories: c.map { Int($0.rounded()) },
+            proteinG: p.map { ($0 * 10).rounded() / 10 },
+            fatG:     f.map { ($0 * 10).rounded() / 10 },
+            carbsG:   ch.map { ($0 * 10).rounded() / 10 }
+        )
     }
 
     // MARK: - Private helpers

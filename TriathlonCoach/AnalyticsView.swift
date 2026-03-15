@@ -6,7 +6,6 @@ struct AnalyticsView: View {
 
     @State private var weekOffset = 0
     @State private var selectedWorkout: WorkoutPlanJSON?
-    @State private var showLogSheet = false
     @State private var isGeneratingReport = false
     @State private var reportCopied = false
     @State private var dayReportCopied: String? = nil
@@ -45,12 +44,9 @@ struct AnalyticsView: View {
             }
         }
         .background(Color(red: 0.04, green: 0.04, blue: 0.06).ignoresSafeArea())
-        .sheet(isPresented: $showLogSheet) {
-            if let w = selectedWorkout {
-                LogWorkoutSheet(workout: w) { updated in
-                    store.update(updated)
-                    selectedWorkout = nil
-                }
+        .sheet(item: $selectedWorkout) { w in
+            LogWorkoutSheet(workout: w) { updated in
+                store.update(updated)
             }
         }
     }
@@ -132,9 +128,15 @@ struct AnalyticsView: View {
                         .padding(.horizontal, 4)
 
                         ForEach(group.workouts) { workout in
-                            AnalyticsRow(workout: workout) {
-                                selectedWorkout = workout
-                                showLogSheet = true
+                            AnalyticsRow(
+                                workout: workout,
+                                onLog: { selectedWorkout = workout },
+                                onAnalyze: { sendWorkoutToCoach(workout) }
+                            )
+                            .contextMenu {
+                                Button(role: .destructive, action: { store.delete(workout) }) {
+                                    Label("Удалить тренировку", systemImage: "trash")
+                                }
                             }
                         }
                     }
@@ -234,6 +236,11 @@ struct AnalyticsView: View {
         store.selectedTab = 0
     }
 
+    private func sendWorkoutToCoach(_ workout: WorkoutPlanJSON) {
+        store.pendingPrompt = ReportBuilder.workoutReport(workout, profile: store.profile)
+        store.selectedTab = 0
+    }
+
     // MARK: - Day grouping
 
     private struct DayGroup {
@@ -317,6 +324,7 @@ struct StatCard: View {
 struct AnalyticsRow: View {
     let workout: WorkoutPlanJSON
     let onLog: () -> Void
+    let onAnalyze: () -> Void
 
     var body: some View {
         HStack(spacing: 12) {
@@ -352,12 +360,22 @@ struct AnalyticsRow: View {
                 }
             }
             Spacer()
-            Button(action: onLog) {
-                Text(workout.completed ? "Изм." : "Лог")
-                    .font(.system(size: 12, weight: .semibold)).foregroundColor(.white.opacity(0.6))
-                    .padding(.horizontal, 10).padding(.vertical, 6)
-                    .background(Color.white.opacity(0.08))
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
+            HStack(spacing: 6) {
+                Button(action: onAnalyze) {
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(.purple.opacity(0.8))
+                        .padding(8)
+                        .background(Color.purple.opacity(0.12))
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                }
+                Button(action: onLog) {
+                    Text(workout.completed ? "Изм." : "Лог")
+                        .font(.system(size: 12, weight: .semibold)).foregroundColor(.white.opacity(0.6))
+                        .padding(.horizontal, 10).padding(.vertical, 6)
+                        .background(Color.white.opacity(0.08))
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                }
             }
         }
         .padding(12)
@@ -421,6 +439,7 @@ struct LogWorkoutSheet: View {
 
     @State private var isLoadingHealth = false
     @State private var healthStatus: String? = nil
+    @State private var availableHealthWorkouts: [HealthKitReader.WorkoutHealthData] = []
 
     var body: some View {
         NavigationStack {
@@ -478,6 +497,51 @@ struct LogWorkoutSheet: View {
                             Text(status)
                                 .font(.system(size: 12)).foregroundColor(.green)
                                 .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+
+                        // Multiple workouts picker
+                        if availableHealthWorkouts.count > 1 {
+                            sectionHeader("Найдено тренировок в Apple Health")
+                            VStack(spacing: 6) {
+                                ForEach(Array(availableHealthWorkouts.enumerated()), id: \.offset) { _, wd in
+                                    Button(action: { applyWorkoutFields(wd, overwrite: true) }) {
+                                        HStack(spacing: 10) {
+                                            VStack(alignment: .leading, spacing: 2) {
+                                                Text(wd.displayName)
+                                                    .font(.system(size: 13, weight: .semibold))
+                                                    .foregroundColor(.white)
+                                                HStack(spacing: 8) {
+                                                    if let hr = wd.avgHR {
+                                                        Text("♥ \(hr)").font(.system(size: 12))
+                                                            .foregroundColor(.red.opacity(0.8))
+                                                    }
+                                                    if let d = wd.distanceM {
+                                                        Text(String(format: "%.1f км", d / 1000))
+                                                            .font(.system(size: 12)).foregroundColor(.cyan.opacity(0.8))
+                                                    }
+                                                    if !wd.intervals.isEmpty {
+                                                        Text("\(wd.intervals.count) отр.")
+                                                            .font(.system(size: 12)).foregroundColor(.white.opacity(0.4))
+                                                    }
+                                                }
+                                            }
+                                            Spacer()
+                                            Image(systemName: "arrow.down.circle")
+                                                .font(.system(size: 15)).foregroundColor(.blue.opacity(0.8))
+                                        }
+                                        .padding(10)
+                                        .background(Color.white.opacity(0.06))
+                                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                                    }
+                                }
+                                Button(action: { mergeAndApply(availableHealthWorkouts) }) {
+                                    Label("Объединить все", systemImage: "arrow.triangle.merge")
+                                        .font(.system(size: 13, weight: .semibold)).foregroundColor(.orange)
+                                        .frame(maxWidth: .infinity).padding(.vertical, 10)
+                                        .background(Color.orange.opacity(0.1))
+                                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                                }
+                            }
                         }
 
                         // Loaded intervals display
@@ -708,6 +772,43 @@ struct LogWorkoutSheet: View {
         }
     }
 
+    private func applyWorkoutFields(_ wd: HealthKitReader.WorkoutHealthData, overwrite: Bool) {
+        if overwrite || actualDuration.isEmpty { actualDuration = String(Int(wd.durationMin.rounded())) }
+        if (overwrite || actualHR.isEmpty),    let h = wd.avgHR    { actualHR    = "\(h)" }
+        if (overwrite || actualMaxHR.isEmpty), let h = wd.maxHR    { actualMaxHR = "\(h)" }
+        if (overwrite || distance.isEmpty),    let d = wd.distanceM { distance   = String(format: "%.0f", d) }
+        if (overwrite || calories.isEmpty),    let c = wd.calories  { calories   = "\(c)" }
+        if overwrite || loadedIntervals.isEmpty { loadedIntervals = wd.intervals }
+    }
+
+    private func mergeAndApply(_ workouts: [HealthKitReader.WorkoutHealthData]) {
+        guard !workouts.isEmpty else { return }
+        let totalDuration = workouts.reduce(0.0) { $0 + $1.durationMin }
+        let avgHRs = workouts.compactMap { $0.avgHR }
+        let avgHR = avgHRs.isEmpty ? nil : avgHRs.reduce(0, +) / avgHRs.count
+        let maxHR = workouts.compactMap { $0.maxHR }.max()
+        let totalDist = workouts.compactMap { $0.distanceM }.reduce(0.0, +)
+        let totalCals = workouts.compactMap { $0.calories }.reduce(0, +)
+        var allIntervals: [HealthKitReader.WorkoutHealthData.Interval] = []
+        var num = 1
+        for wd in workouts {
+            for iv in wd.intervals {
+                allIntervals.append(.init(number: num, durationMin: iv.durationMin,
+                                          avgHR: iv.avgHR, maxHR: iv.maxHR, distanceM: iv.distanceM))
+                num += 1
+            }
+        }
+        let startTime = workouts.map { $0.startTime }.min() ?? workouts[0].startTime
+        let endTime   = workouts.map { $0.endTime }.max()   ?? workouts[0].endTime
+        let merged = HealthKitReader.WorkoutHealthData(
+            durationMin: totalDuration, avgHR: avgHR, maxHR: maxHR,
+            distanceM: totalDist > 0 ? totalDist : nil,
+            calories: totalCals > 0 ? totalCals : nil,
+            startTime: startTime, endTime: endTime, intervals: allIntervals
+        )
+        applyWorkoutFields(merged, overwrite: true)
+    }
+
     private func readFromHealth() async {
         guard let planDate = workout.parsedDate else {
             healthStatus = "Ошибка: не удалось определить дату тренировки"
@@ -715,18 +816,17 @@ struct LogWorkoutSheet: View {
         }
         isLoadingHealth = true
 
-        // For wellness metrics use today (or yesterday) — plan date may be future/past
         let today     = Calendar.current.startOfDay(for: Date())
         let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: today) ?? today
-        // Prefer plan date if it's today or in the past, else use today
         let wellnessDate = planDate <= Date() ? planDate : today
 
-        // Step 1: workout data (±1 day from plan date or today)
-        let wdFromPlan  = await healthReader.workoutData(sport: workout.sport, on: planDate)
-        let wdFromToday = wdFromPlan == nil && planDate != today
-            ? await healthReader.workoutData(sport: workout.sport, on: today)
-            : nil
-        let wd = wdFromPlan ?? wdFromToday
+        // Step 1: fetch all available workouts
+        var allWDs = await healthReader.allWorkoutData(sport: workout.sport, on: planDate)
+        if allWDs.isEmpty && planDate != today {
+            allWDs = await healthReader.allWorkoutData(sport: workout.sport, on: today)
+        }
+        availableHealthWorkouts = allWDs
+        let wd = allWDs.first
 
         // Step 2: wellness in parallel
         let workoutEnd = wd?.endTime ?? Calendar.current.date(byAdding: .hour, value: 20, to: wellnessDate) ?? wellnessDate
@@ -739,23 +839,14 @@ struct LogWorkoutSheet: View {
 
         let (hrvVal, hrvAfterData, hrRecovVal, spVal, sleepDataToday, restingVal) =
             await (hrv, hrvAfterV, hrRecov, sp, sl, rhr)
-        // Also try yesterday's sleep if today returns nothing
         var sleepData = sleepDataToday
         if sleepData == nil && wellnessDate != yesterday {
             sleepData = await healthReader.sleepResult(nightBefore: yesterday)
         }
 
-        // Auto-fill workout fields
-        if let wd = wd {
-            if actualDuration.isEmpty { actualDuration = String(Int(wd.durationMin.rounded())) }
-            if actualHR.isEmpty, let h = wd.avgHR    { actualHR    = "\(h)" }
-            if actualMaxHR.isEmpty, let h = wd.maxHR { actualMaxHR = "\(h)" }
-            if distance.isEmpty, let d = wd.distanceM { distance = String(format: "%.0f", d) }
-            if calories.isEmpty, let c = wd.calories  { calories = "\(c)" }
-            if loadedIntervals.isEmpty && !wd.intervals.isEmpty { loadedIntervals = wd.intervals }
-        }
+        // Auto-fill workout fields (only if empty — don't overwrite manual input)
+        if let wd = wd { applyWorkoutFields(wd, overwrite: false) }
         if hrRecovery.isEmpty, let r = hrRecovVal { hrRecovery = "\(r)" }
-
         if let v = hrvVal,       hrvBefore.isEmpty { hrvBefore = "\(Int(v))" }
         if let v = hrvAfterData, hrvAfter.isEmpty  { hrvAfter  = "\(Int(v))" }
         if let v = spVal,        spo2.isEmpty      { spo2      = "\(Int(v))" }

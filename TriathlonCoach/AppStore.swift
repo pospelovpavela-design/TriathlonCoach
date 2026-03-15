@@ -26,18 +26,24 @@ struct AthleteProfile: Codable {
 class AppStore: ObservableObject {
 
     @Published var workouts: [WorkoutPlanJSON] = []
+    @Published var healthEntries: [HealthDayEntry] = []
     @Published var profile: AthleteProfile = AthleteProfile()
-    @Published var pendingPrompt: String = ""   // set by Analytics to pre-fill PromptView
+    @Published var pendingPrompt: String = ""
     @Published var selectedTab: Int = 0
 
     private var fileURL: URL {
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         return docs.appendingPathComponent("workouts_store.json")
     }
+    private var healthFileURL: URL {
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        return docs.appendingPathComponent("health_entries.json")
+    }
 
     init() {
         loadProfile()
         loadWorkouts()
+        loadHealthEntries()
     }
 
     // MARK: - Persistence
@@ -98,6 +104,38 @@ class AppStore: ObservableObject {
         guard let idx = workouts.firstIndex(where: { $0.stableKey == workout.stableKey }) else { return }
         workouts[idx] = workout
         save()
+    }
+
+    func delete(_ workout: WorkoutPlanJSON) {
+        workouts.removeAll { $0.stableKey == workout.stableKey }
+        save()
+    }
+
+    // MARK: - Health Entries
+
+    func healthEntryOrNil(for date: String) -> HealthDayEntry? {
+        healthEntries.first { $0.date == date }
+    }
+
+    func updateHealthEntry(_ entry: HealthDayEntry) {
+        if let idx = healthEntries.firstIndex(where: { $0.date == entry.date }) {
+            healthEntries[idx] = entry
+        } else {
+            healthEntries.append(entry)
+        }
+        healthEntries.sort { $0.date > $1.date }
+        saveHealthEntries()
+    }
+
+    private func saveHealthEntries() {
+        guard let data = try? JSONEncoder().encode(healthEntries) else { return }
+        try? data.write(to: healthFileURL, options: .atomic)
+    }
+
+    private func loadHealthEntries() {
+        guard let data = try? Data(contentsOf: healthFileURL),
+              let loaded = try? JSONDecoder().decode([HealthDayEntry].self, from: data) else { return }
+        healthEntries = loaded
     }
 
     func loadFromURL(_ url: URL) {

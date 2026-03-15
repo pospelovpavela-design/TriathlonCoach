@@ -21,9 +21,13 @@ struct TriathlonCoachApp: App {
                     .tabItem { Label("Итоги", systemImage: "chart.bar.fill") }
                     .tag(2)
 
+                HealthView()
+                    .tabItem { Label("Здоровье", systemImage: "heart.text.square.fill") }
+                    .tag(3)
+
                 SettingsView()
                     .tabItem { Label("Настройки", systemImage: "gear") }
-                    .tag(3)
+                    .tag(4)
             }
             .environmentObject(store)
             .environmentObject(wkManager)

@@ -116,6 +116,72 @@ struct HRZone {
     }
 }
 
+// MARK: - Health Day Entry
+
+struct HealthDayEntry: Codable, Identifiable {
+    var id: UUID = UUID()
+    var date: String  // yyyy-MM-dd
+
+    // Biometrics
+    var hrv: Int?
+    var restingHR: Int?
+    var spo2: Double?
+    var wristTemperatureDelta: Double?  // °C deviation from personal baseline
+    var weight: Double?                 // kg
+    var systolicBP: Int?
+    var diastolicBP: Int?
+
+    // Sleep
+    var sleepHours: Double?
+    var sleepQuality: Int?        // 1–5
+    var sleepDeepHours: Double?
+    var sleepRemHours: Double?
+    var sleepCoreHours: Double?
+    var sleepAvgHR: Int?
+    var sleepAvgHRV: Double?
+
+    // Nutrition (consumed that day)
+    var caloriesConsumed: Int?
+    var proteinG: Double?
+    var fatG: Double?
+    var carbsG: Double?
+
+    // Notes
+    var notes: String?
+
+    // AI readiness analysis
+    var aiReadinessScore: Int?     // 0–100
+    var aiStatus: String?          // "отличное"/"хорошее"/"удовлетворительное"/"плохое"
+    var aiSummary: String?
+    var aiTrainingRec: String?
+    var aiNutritionRec: String?
+    var aiRecoveryRec: String?
+    var aiWarnings: [String]?
+    var aiGeneratedAt: String?     // yyyy-MM-dd HH:mm
+
+    var parsedDate: Date? {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyy-MM-dd"
+        return f.date(from: date)
+    }
+    var formattedDate: String {
+        guard let d = parsedDate else { return date }
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "ru_RU")
+        f.dateFormat = "EEE, d MMM"
+        return f.string(from: d).capitalized
+    }
+    var isToday: Bool {
+        guard let d = parsedDate else { return false }
+        return Calendar.current.isDateInToday(d)
+    }
+    var hasData: Bool {
+        hrv != nil || restingHR != nil || weight != nil || sleepHours != nil || caloriesConsumed != nil
+    }
+    var hasAIAnalysis: Bool { aiReadinessScore != nil }
+}
+
 // MARK: - Sport mapping
 
 extension WorkoutPlanJSON {

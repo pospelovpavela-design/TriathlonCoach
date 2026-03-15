@@ -4,12 +4,14 @@ struct WorkoutDetailView: View {
     let workout: WorkoutPlanJSON
     @ObservedObject var wkManager: WorkoutKitManager
     var onUpdate: ((WorkoutPlanJSON) -> Void)? = nil
+    var onDelete: (() -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject var store: AppStore
     @State private var isSaving = false
     @State private var saveResult: String?
     @State private var showLog = false
     @State private var reportCopied = false
+    @State private var showDeleteConfirm = false
 
     private var totalMinutes: Int { workout.intervals.reduce(0) { $0 + $1.duration_min } }
 
@@ -54,6 +56,23 @@ struct WorkoutDetailView: View {
                             }
                         }
 
+                        // Analyze workout — send to Claude chat
+                        Button(action: sendToCoach) {
+                            HStack(spacing: 8) {
+                                Image(systemName: "sparkles")
+                                Text("Анализ тренировки")
+                                    .fontWeight(.semibold)
+                            }
+                            .font(.system(size: 15))
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                            .background(LinearGradient(
+                                colors: [Color(red: 0.5, green: 0.2, blue: 0.9), Color(red: 0.3, green: 0.1, blue: 0.7)],
+                                startPoint: .topLeading, endPoint: .bottomTrailing))
+                            .clipShape(RoundedRectangle(cornerRadius: 14))
+                        }
+
                         // Copy workout report for Claude
                         Button(action: copyReport) {
                             HStack(spacing: 8) {
@@ -79,10 +98,25 @@ struct WorkoutDetailView: View {
             }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    if onDelete != nil {
+                        Button(action: { showDeleteConfirm = true }) {
+                            Image(systemName: "trash")
+                                .foregroundColor(.red.opacity(0.7))
+                        }
+                    }
+                }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Закрыть") { dismiss() }
                         .foregroundColor(.white.opacity(0.6))
                 }
+            }
+            .confirmationDialog("Удалить тренировку?", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
+                Button("Удалить", role: .destructive) {
+                    onDelete?()
+                    dismiss()
+                }
+                Button("Отмена", role: .cancel) {}
             }
             .sheet(isPresented: $showLog) {
                 if let update = onUpdate {
@@ -267,6 +301,12 @@ struct WorkoutDetailView: View {
     }
 
     // MARK: - Report
+
+    private func sendToCoach() {
+        store.pendingPrompt = ReportBuilder.workoutReport(workout, profile: store.profile)
+        store.selectedTab = 0
+        dismiss()
+    }
 
     private func copyReport() {
         let report = ReportBuilder.workoutReport(workout, profile: store.profile)
