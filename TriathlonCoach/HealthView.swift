@@ -624,9 +624,24 @@ struct HealthDaySheet: View {
         async let rhr = healthReader.restingHROrYesterday(for: date)
         async let sp  = healthReader.spO2OrYesterday(for: date)
         async let nut = healthReader.nutrition(for: date)
+        // Cardio fitness & recovery
+        async let rr   = healthReader.respiratoryRate(nightBefore: date)
+        async let vo2  = healthReader.vo2max(for: date)
+        async let cr   = healthReader.cardioRecovery1Min(for: date)
+        async let wHR  = healthReader.walkingHRAverage(for: date)
+        // Activity rings
+        async let st   = healthReader.steps(for: date)
+        async let sm   = healthReader.standMinutes(for: date)
+        async let em   = healthReader.exerciseMinutes(for: date)
+        // Mindfulness + iOS 18 metrics
+        async let mind = healthReader.mindfulness(for: date)
+        async let we   = healthReader.workoutEffort(for: date)
+        async let mood = healthReader.mood(for: date)
 
         let (sleep, temp, bodyWt, pressure, hrvVal, rhrVal, spVal, nutData) =
             await (sl, wt, bw, bp, hrv, rhr, sp, nut)
+        let (respRate, vo2Val, cardioRec, walkHR, stepsVal, standVal, exVal, mindData, effort, moodVal) =
+            await (rr, vo2, cr, wHR, st, sm, em, mind, we, mood)
 
         if let v = hrvVal,   self.hrv.isEmpty       { self.hrv       = "\(Int(v))" }
         if let v = rhrVal,   restingHR.isEmpty       { restingHR      = "\(Int(v))" }
@@ -649,6 +664,21 @@ struct HealthDaySheet: View {
         if let f = nutData.fatG,     fat.isEmpty      { fat      = String(format: "%.0f", f) }
         if let ch = nutData.carbsG,  carbs.isEmpty    { carbs    = String(format: "%.0f", ch) }
 
+        // New HK metrics: write directly to entry (no UI text fields yet)
+        entry.respiratoryRate = respRate
+        entry.vo2max          = vo2Val
+        entry.cardioRecovery  = cardioRec
+        entry.walkingHR       = walkHR
+        entry.steps           = stepsVal
+        entry.standMin        = standVal
+        entry.exerciseMin     = exVal
+        entry.mindfulMin      = mindData?.totalMinutes
+        entry.mindfulSessions = mindData?.sessions
+        entry.workoutEffort   = effort
+        entry.moodValence     = moodVal?.valence
+        entry.moodLabels      = moodVal?.labels
+        entry.moodKind        = moodVal?.kind
+
         isLoadingHealth = false
 
         var found: [String] = []
@@ -659,6 +689,15 @@ struct HealthDaySheet: View {
         if sleep   != nil   { found.append("сон") }
         if temp    != nil   { found.append("температура") }
         if nutData.calories != nil  { found.append("питание") }
+        if respRate  != nil { found.append("дыхание") }
+        if vo2Val    != nil { found.append("VO₂max") }
+        if cardioRec != nil { found.append("кардио-восст.") }
+        if walkHR    != nil { found.append("walking HR") }
+        if stepsVal  != nil { found.append("шаги") }
+        if standVal  != nil || exVal != nil { found.append("кольца") }
+        if mindData  != nil { found.append("осознанность") }
+        if effort    != nil { found.append("effort") }
+        if moodVal   != nil { found.append("настроение") }
 
         healthStatus = found.isEmpty
             ? "Нет данных в Apple Health"

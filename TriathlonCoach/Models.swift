@@ -146,6 +146,29 @@ struct HealthDayEntry: Codable, Identifiable {
     var fatG: Double?
     var carbsG: Double?
 
+    // Cardio fitness & recovery
+    var respiratoryRate: Double?      // BrPM, overnight avg
+    var vo2max: Double?               // ml/(kg·min), latest
+    var cardioRecovery: Int?          // bpm drop 1 min after high-intensity (Apple)
+    var walkingHR: Double?            // bpm, latest
+
+    // Daily activity rings
+    var steps: Int?
+    var standMin: Int?
+    var exerciseMin: Int?
+
+    // Mindfulness
+    var mindfulMin: Int?
+    var mindfulSessions: Int?
+
+    // Training load (iOS 18+)
+    var workoutEffort: Double?        // workoutEffortScore, latest
+
+    // State of Mind / mood (iOS 18+)
+    var moodValence: Double?          // −1..+1
+    var moodLabels: [String]?
+    var moodKind: String?             // "momentaryEmotion" / "dailyMood"
+
     // Notes
     var notes: String?
 
@@ -178,6 +201,7 @@ struct HealthDayEntry: Codable, Identifiable {
     }
     var hasData: Bool {
         hrv != nil || restingHR != nil || weight != nil || sleepHours != nil || caloriesConsumed != nil
+            || respiratoryRate != nil || vo2max != nil || steps != nil || mindfulMin != nil || moodValence != nil
     }
     var hasAIAnalysis: Bool { aiReadinessScore != nil }
 }

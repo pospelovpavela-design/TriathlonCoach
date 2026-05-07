@@ -31,9 +31,24 @@ class HealthKitReader: ObservableObject {
             HKQuantityType(.dietaryProtein),
             HKQuantityType(.dietaryFatTotal),
             HKQuantityType(.dietaryCarbohydrates),
+            // Cardio fitness & recovery
+            HKQuantityType(.respiratoryRate),
+            HKQuantityType(.vo2Max),
+            HKQuantityType(.heartRateRecoveryOneMinute),
+            HKQuantityType(.walkingHeartRateAverage),
+            // Activity rings
+            HKQuantityType(.stepCount),
+            HKQuantityType(.appleStandTime),
+            HKQuantityType(.appleExerciseTime),
+            // Mindfulness
+            HKCategoryType(.mindfulSession),
         ]
         if #available(iOS 17, *) {
             types.insert(HKQuantityType(.appleSleepingWristTemperature))
+        }
+        if #available(iOS 18, *) {
+            types.insert(HKQuantityType(.workoutEffortScore))
+            types.insert(HKObjectType.stateOfMindType())
         }
         do {
             try await store.requestAuthorization(toShare: Set<HKSampleType>(), read: types)
@@ -492,6 +507,155 @@ class HealthKitReader: ObservableObject {
             fatG:     f.map { ($0 * 10).rounded() / 10 },
             carbsG:   ch.map { ($0 * 10).rounded() / 10 }
         )
+    }
+
+    // MARK: - Respiratory Rate (overnight)
+
+    /// Average respiratory rate during the night before `date` (BrPM).
+    /// Note: Athlytic/Bevel could be cross-checked against this in debug.
+    func respiratoryRate(nightBefore date: Date) async -> Double? {
+        let cal = Calendar.current
+        let dayStart = cal.startOfDay(for: date)
+        guard let prevEvening = cal.date(byAdding: .hour, value: -6, to: dayStart) else { return nil }
+        let morning = dayStart.addingTimeInterval(3600 * 12)
+        return await statAverage(type: HKQuantityType(.respiratoryRate),
+                                  from: prevEvening, to: morning,
+                                  unit: HKUnit(from: "count/min"))
+    }
+
+    // MARK: - VO2max
+
+    /// Latest VO2max sample on or before `date` (ml/(kg·min)).
+    func vo2max(for date: Date) async -> Double? {
+        let cal = Calendar.current
+        let end = cal.startOfDay(for: date).addingTimeInterval(86400)
+        let start = cal.date(byAdding: .day, value: -90, to: end) ?? end
+        return await latestSample(type: HKQuantityType(.vo2Max),
+                                   from: start, to: end,
+                                   unit: HKUnit(from: "ml/kg*min"))
+    }
+
+    // MARK: - Cardio Recovery (Apple, 1 min)
+
+    /// Latest Apple-computed 1-minute heart rate recovery on `date` (bpm drop).
+    func cardioRecovery1Min(for date: Date) async -> Int? {
+        let (start, end) = dayRange(for: date)
+        let v = await latestSample(type: HKQuantityType(.heartRateRecoveryOneMinute),
+                                    from: start, to: end,
+                                    unit: HKUnit(from: "count/min"))
+        return v.map { Int($0.rounded()) }
+    }
+
+    // MARK: - Walking HR Average
+
+    /// Latest walking heart rate average on `date` (bpm).
+    func walkingHRAverage(for date: Date) async -> Double? {
+        let (start, end) = dayRange(for: date)
+        return await latestSample(type: HKQuantityType(.walkingHeartRateAverage),
+                                   from: start, to: end,
+                                   unit: HKUnit(from: "count/min"))?.rounded()
+    }
+
+    // MARK: - Steps
+
+    /// Total steps for `date`.
+    func steps(for date: Date) async -> Int? {
+        let (start, end) = dayRange(for: date)
+        guard let v = await statSum(type: HKQuantityType(.stepCount),
+                                     from: start, to: end, unit: .count()) else { return nil }
+        return Int(v.rounded())
+    }
+
+    // MARK: - Stand / Exercise minutes
+
+    /// Total Apple stand time for `date` (minutes).
+    func standMinutes(for date: Date) async -> Int? {
+        let (start, end) = dayRange(for: date)
+        guard let v = await statSum(type: HKQuantityType(.appleStandTime),
+                                     from: start, to: end, unit: .minute()) else { return nil }
+        return Int(v.rounded())
+    }
+
+    /// Total Apple exercise time for `date` (minutes).
+    func exerciseMinutes(for date: Date) async -> Int? {
+        let (start, end) = dayRange(for: date)
+        guard let v = await statSum(type: HKQuantityType(.appleExerciseTime),
+                                     from: start, to: end, unit: .minute()) else { return nil }
+        return Int(v.rounded())
+    }
+
+    // MARK: - Mindfulness
+
+    struct MindfulData {
+        let totalMinutes: Int
+        let sessions: Int
+    }
+
+    /// Total mindful minutes and session count for `date`.
+    func mindfulness(for date: Date) async -> MindfulData? {
+        let (start, end) = dayRange(for: date)
+        let pred = HKQuery.predicateForSamples(withStart: start, end: end)
+        let samples: [HKCategorySample] = await withCheckedContinuation { cont in
+            let q = HKSampleQuery(sampleType: HKCategoryType(.mindfulSession),
+                                   predicate: pred,
+                                   limit: HKObjectQueryNoLimit,
+                                   sortDescriptors: nil) { _, samples, _ in
+                cont.resume(returning: (samples as? [HKCategorySample]) ?? [])
+            }
+            store.execute(q)
+        }
+        guard !samples.isEmpty else { return nil }
+        let totalSec = samples.reduce(0.0) { $0 + $1.endDate.timeIntervalSince($1.startDate) }
+        return MindfulData(totalMinutes: Int((totalSec / 60).rounded()), sessions: samples.count)
+    }
+
+    // MARK: - Workout Effort Score (iOS 18+)
+
+    /// Latest workout effort score for `date` (Apple's 1–10 RPE-equivalent).
+    func workoutEffort(for date: Date) async -> Double? {
+        guard #available(iOS 18, *) else { return nil }
+        let (start, end) = dayRange(for: date)
+        return await latestSample(type: HKQuantityType(.workoutEffortScore),
+                                   from: start, to: end,
+                                   unit: .appleEffortScore())
+    }
+
+    // MARK: - State of Mind / Mood (iOS 18+)
+
+    struct MoodSample {
+        let valence: Double         // −1.0 ... +1.0
+        let labels: [String]        // e.g., ["Calm", "Stressed"]
+        let kind: String            // "momentaryEmotion" or "dailyMood"
+        let date: Date
+    }
+
+    /// Latest State of Mind sample for `date`.
+    /// Prefers `dailyMood` over `momentaryEmotion` if both exist.
+    func mood(for date: Date) async -> MoodSample? {
+        guard #available(iOS 18, *) else { return nil }
+        let (start, end) = dayRange(for: date)
+        let pred = HKQuery.predicateForSamples(withStart: start, end: end)
+        let sort = NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: false)
+        let samples: [HKStateOfMind] = await withCheckedContinuation { cont in
+            let q = HKSampleQuery(sampleType: HKObjectType.stateOfMindType(),
+                                   predicate: pred,
+                                   limit: HKObjectQueryNoLimit,
+                                   sortDescriptors: [sort]) { _, samples, _ in
+                cont.resume(returning: (samples as? [HKStateOfMind]) ?? [])
+            }
+            store.execute(q)
+        }
+        guard !samples.isEmpty else { return nil }
+        // Prefer daily mood, fall back to most recent momentary
+        let chosen = samples.first(where: { $0.kind == .dailyMood }) ?? samples[0]
+        let kindStr: String
+        switch chosen.kind {
+        case .dailyMood:        kindStr = "dailyMood"
+        case .momentaryEmotion: kindStr = "momentaryEmotion"
+        @unknown default:       kindStr = "unknown"
+        }
+        let labels = chosen.labels.map { String(describing: $0) }
+        return MoodSample(valence: chosen.valence, labels: labels, kind: kindStr, date: chosen.endDate)
     }
 
     // MARK: - Private helpers
