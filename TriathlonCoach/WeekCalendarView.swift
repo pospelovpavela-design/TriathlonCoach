@@ -19,6 +19,23 @@ struct WeekCalendarView: View {
         return (0..<7).compactMap { Calendar.current.date(byAdding: .day, value: $0, to: mon) }
     }
 
+    /// Workouts in the next 48h that haven't been sent to Apple Watch yet.
+    private var pendingWatchExports: [WorkoutPlanJSON] {
+        let cal = Calendar.current
+        let today = cal.startOfDay(for: Date())
+        guard let tomorrowEnd = cal.date(byAdding: .day, value: 2, to: today) else { return [] }
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyy-MM-dd"
+        let nonExportable: Set<String> = ["rest", "mobility", "stretch"]
+        return store.workouts.filter { w in
+            guard !nonExportable.contains(w.sport) else { return false }
+            guard let d = f.date(from: w.date) else { return false }
+            guard d >= today && d < tomorrowEnd else { return false }
+            return !wkManager.isAlreadySaved(w.title)
+        }
+    }
+
     var body: some View {
         ZStack {
             VStack(spacing: 0) {
@@ -26,6 +43,11 @@ struct WeekCalendarView: View {
                 weekNavigator
                 ScrollView {
                     LazyVStack(spacing: 0) {
+                        if !pendingWatchExports.isEmpty && wkManager.authorizationStatus == .authorized {
+                            pendingExportBanner
+                                .padding(.horizontal, 16)
+                                .padding(.bottom, 8)
+                        }
                         ForEach(weekDays, id: \.self) { day in
                             DaySection(
                                 day: day,
@@ -130,6 +152,52 @@ struct WeekCalendarView: View {
             }
         }
         .padding(.horizontal, 16).padding(.bottom, 4)
+    }
+
+    private var pendingExportBanner: some View {
+        let pending = pendingWatchExports
+        return Button(action: {
+            Task {
+                let result = await wkManager.saveAllWorkouts(pending)
+                showToast("На Watch: \(result.saved) тренировок")
+            }
+        }) {
+            HStack(spacing: 12) {
+                Image(systemName: "applewatch.radiowaves.left.and.right")
+                    .font(.system(size: 20)).foregroundColor(.orange)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Не на Apple Watch: \(pending.count) трен.")
+                        .font(.system(size: 14, weight: .semibold)).foregroundColor(.white)
+                    Text(pendingExportSubtitle(pending))
+                        .font(.system(size: 12)).foregroundColor(.white.opacity(0.55))
+                }
+                Spacer()
+                Text("Отправить")
+                    .font(.system(size: 13, weight: .bold)).foregroundColor(.black)
+                    .padding(.horizontal, 12).padding(.vertical, 8)
+                    .background(Color.orange).clipShape(RoundedRectangle(cornerRadius: 10))
+            }
+            .padding(14)
+            .background(Color.orange.opacity(0.10))
+            .clipShape(RoundedRectangle(cornerRadius: 14))
+            .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.orange.opacity(0.35), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func pendingExportSubtitle(_ pending: [WorkoutPlanJSON]) -> String {
+        let cal = Calendar.current
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyy-MM-dd"
+        let todayKey = f.string(from: cal.startOfDay(for: Date()))
+        let todayCount = pending.filter { $0.date == todayKey }.count
+        let tomorrowCount = pending.count - todayCount
+        var parts: [String] = []
+        if todayCount > 0    { parts.append("сегодня \(todayCount)") }
+        if tomorrowCount > 0 { parts.append("завтра \(tomorrowCount)") }
+        let scope = parts.joined(separator: " · ")
+        return scope.isEmpty ? "В ближайшие 48 ч" : scope
     }
 
     private var sendAllButton: some View {

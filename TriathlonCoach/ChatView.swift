@@ -6,11 +6,15 @@ struct ChatView: View {
     @State private var generatedPrompt: String = ""
     @State private var pastedResponse: String = ""
     @State private var extractedWorkouts: [WorkoutPlanJSON] = []
+    @State private var extractedDeletes: [ClaudeService.DeleteRequest] = []
     @State private var loadedCount: Int? = nil
+    @State private var deletedCount: Int? = nil
     @State private var copied = false
-    @State private var selectedRequest: PlanRequest = .thisWeek
+    @State private var selectedRequest: PlanRequest = .today
+    @State private var todayPreferences: String = ""
 
     enum PlanRequest: String, CaseIterable {
+        case today    = "Сегодня"
         case thisWeek = "Эта неделя"
         case nextWeek = "Следующая"
         case recovery = "Восстановление"
@@ -34,7 +38,9 @@ struct ChatView: View {
             generatedPrompt = msg
             pastedResponse = ""
             extractedWorkouts = []
-            loadedCount = nil
+            extractedDeletes = []
+            loadedCount  = nil
+            deletedCount = nil
             store.pendingPrompt = ""
         }
         .onChange(of: selectedRequest) { _ in generatePrompt() }
@@ -73,6 +79,8 @@ struct ChatView: View {
                 }
                 .padding(.horizontal, 1)
             }
+
+            preferencesField
 
             Text(generatedPrompt)
                 .font(.system(size: 11, design: .monospaced))
@@ -128,30 +136,45 @@ struct ChatView: View {
                 }
             }
 
-            if !extractedWorkouts.isEmpty {
+            if !extractedWorkouts.isEmpty || !extractedDeletes.isEmpty {
                 loadBanner
             }
         }
+    }
+
+    private var foundSummary: String {
+        var p: [String] = []
+        if !extractedWorkouts.isEmpty { p.append("\(extractedWorkouts.count) трен.") }
+        if !extractedDeletes.isEmpty  { p.append("\(extractedDeletes.count) к удалению") }
+        return p.joined(separator: ", ")
+    }
+
+    private var doneSummary: String? {
+        guard loadedCount != nil || deletedCount != nil else { return nil }
+        var p: [String] = []
+        if let n = loadedCount  { p.append("загружено \(n)") }
+        if let n = deletedCount, n > 0 { p.append("удалено \(n)") }
+        return p.isEmpty ? nil : p.joined(separator: ", ")
     }
 
     private var loadBanner: some View {
         HStack(spacing: 12) {
             Image(systemName: "calendar.badge.plus").font(.system(size: 20)).foregroundColor(.green)
             VStack(alignment: .leading, spacing: 2) {
-                Text("Найдено \(extractedWorkouts.count) тренировок")
+                Text("Найдено: \(foundSummary)")
                     .font(.system(size: 14, weight: .semibold)).foregroundColor(.white)
-                if let n = loadedCount {
-                    Text("✓ Загружено в план: \(n)")
+                if let d = doneSummary {
+                    Text("✓ \(d)")
                         .font(.system(size: 12)).foregroundColor(.green)
                 } else {
-                    Text("Нажми чтобы добавить в план")
+                    Text("Нажми чтобы применить к плану")
                         .font(.system(size: 12)).foregroundColor(.white.opacity(0.5))
                 }
             }
             Spacer()
-            if loadedCount == nil {
+            if loadedCount == nil && deletedCount == nil {
                 Button(action: loadPlan) {
-                    Text("Загрузить")
+                    Text("Применить")
                         .font(.system(size: 14, weight: .bold)).foregroundColor(.black)
                         .padding(.horizontal, 14).padding(.vertical, 8)
                         .background(Color.green).clipShape(RoundedRectangle(cornerRadius: 10))
@@ -162,6 +185,32 @@ struct ChatView: View {
         .background(Color.green.opacity(0.1))
         .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.green.opacity(0.3), lineWidth: 1))
         .clipShape(RoundedRectangle(cornerRadius: 14))
+    }
+
+    // MARK: - Preferences input
+
+    private var preferencesField: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Пожелания / возможности на сегодня")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(.white.opacity(0.55)).tracking(1)
+            ZStack(alignment: .topLeading) {
+                TextEditor(text: $todayPreferences)
+                    .font(.system(size: 13))
+                    .foregroundColor(.white)
+                    .scrollContentBackground(.hidden)
+                    .background(Color.white.opacity(0.05))
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .frame(minHeight: 60, maxHeight: 110)
+                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.white.opacity(0.08)))
+                    .onChange(of: todayPreferences) { _ in generatePrompt() }
+                if todayPreferences.isEmpty {
+                    Text("Время, локация, оборудование, что хочется/не хочется...")
+                        .font(.system(size: 12)).foregroundColor(.white.opacity(0.22))
+                        .padding(14).allowsHitTesting(false)
+                }
+            }
+        }
     }
 
     private func stepLabel(_ number: String, _ title: String) -> some View {
@@ -179,26 +228,67 @@ struct ChatView: View {
     // MARK: - Logic
 
     private func generatePrompt() {
-        let weekRange: String
         let requestText: String
         switch selectedRequest {
+        case .today:
+            let dayLabel = todayDateString()
+            requestText = """
+            Сегодня \(dayLabel). Оцени готовность атлета и **скорректируй сегодняшний план** под состояние организма. \
+            Если нужно — измени интенсивность, сократи объём, замени тип тренировки или предложи отдых. \
+            В JSON верни итоговый набор тренировок на сегодня (после твоей коррекции): сохранённые без изменений + изменённые с обновлёнными полями + новые. \
+            Поле title и date изменённой тренировки должны совпадать с исходными — это позволит приложению заменить её. Если предлагаешь отдых вместо тренировки — пришли запись с sport=\"rest\". \
+            Если тренировку надо удалить целиком — добавь в текст ответа строку формата `УДАЛИТЬ: \"<title>\" \"<yyyy-MM-dd>\"` для каждой такой тренировки.
+            """
         case .thisWeek:
-            weekRange = store.currentWeekRange()
-            requestText = "Составь план тренировок на эту неделю (\(weekRange))."
+            requestText = "Составь план тренировок на эту неделю (\(store.currentWeekRange())). Учти текущее состояние организма."
         case .nextWeek:
-            weekRange = store.nextWeekRange()
-            requestText = "Составь план тренировок на следующую неделю (\(weekRange))."
+            requestText = "Составь план тренировок на следующую неделю (\(store.nextWeekRange())). Учти текущее состояние и тренд недели."
         case .recovery:
-            weekRange = store.nextWeekRange()
-            requestText = "Составь восстановительную неделю (\(weekRange)) — сниженный объём, только Z1–Z2."
+            requestText = "Составь восстановительную неделю (\(store.nextWeekRange())) — сниженный объём, только Z1–Z2."
         case .preRace:
-            weekRange = store.nextWeekRange()
-            requestText = "Составь пред-соревновательную неделю (\(weekRange)) — умеренный объём с активацией."
+            requestText = "Составь пред-соревновательную неделю (\(store.nextWeekRange())) — умеренный объём с активацией."
         }
-        generatedPrompt = ClaudeService.buildCopyablePrompt(profile: store.profile, requestText: requestText)
+
+        let today = Date()
+        let todayKey = isoKey(today)
+        let healthEntry = store.healthEntryOrNil(for: todayKey)
+        let readiness = healthEntry.flatMap { entry -> HealthService.LocalReadiness? in
+            let r = HealthService.computeLocalReadiness(
+                for: entry,
+                history: store.healthEntries,
+                profile: store.profile
+            )
+            return r.components.isEmpty ? nil : r
+        }
+        let todayWorkouts = selectedRequest == .today ? store.workouts(forDay: today) : []
+
+        generatedPrompt = ClaudeService.buildCopyablePrompt(
+            profile: store.profile,
+            requestText: requestText,
+            healthEntry: healthEntry,
+            readiness: readiness,
+            todayWorkouts: todayWorkouts,
+            preferences: todayPreferences
+        )
         extractedWorkouts = []
-        loadedCount = nil
+        extractedDeletes = []
+        loadedCount  = nil
+        deletedCount = nil
         pastedResponse = ""
+    }
+
+    private func isoKey(_ d: Date) -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyy-MM-dd"
+        return f.string(from: d)
+    }
+
+    private func todayDateString() -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "ru_RU")
+        f.dateFormat = "EEEE, d MMMM"
+        return f.string(from: Date())
     }
 
     private func copyPrompt() {
@@ -209,11 +299,21 @@ struct ChatView: View {
 
     private func parseResponse(_ text: String) {
         extractedWorkouts = ClaudeService.shared.extractWorkouts(from: text)
-        loadedCount = nil
+        extractedDeletes  = ClaudeService.extractDeletes(from: text)
+        loadedCount  = nil
+        deletedCount = nil
     }
 
     private func loadPlan() {
+        var deleted = 0
+        for d in extractedDeletes {
+            if let target = store.workouts.first(where: { $0.title == d.title && $0.date == d.date }) {
+                store.delete(target)
+                deleted += 1
+            }
+        }
         store.addOrReplace(extractedWorkouts)
-        loadedCount = extractedWorkouts.count
+        loadedCount  = extractedWorkouts.count
+        deletedCount = deleted
     }
 }
