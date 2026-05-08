@@ -353,12 +353,18 @@ struct HealthDaySheet: View {
                                 .keyboardType(.decimalPad)
                         }
 
+                        // Apple Health auto-loaded metrics (read-only)
+                        healthKitAutoMetricsSection
+
                         // Notes
                         sectionHeader("Заметки")
                         TextField("Самочувствие, симптомы...", text: $notes, axis: .vertical)
                             .lineLimit(3).foregroundColor(.white)
                             .padding(12).background(Color.white.opacity(0.06))
                             .clipShape(RoundedRectangle(cornerRadius: 10))
+
+                        // Local Readiness (computed from HK signals)
+                        localReadinessSection
 
                         // AI Analysis section
                         aiSection
@@ -562,6 +568,194 @@ struct HealthDaySheet: View {
                 Text(text).font(.system(size: 12)).foregroundColor(.white.opacity(0.75)).lineSpacing(2)
             }
         }
+    }
+
+    // MARK: - Local Readiness (computed from HK signals)
+
+    @ViewBuilder
+    private var localReadinessSection: some View {
+        let readiness = HealthService.computeLocalReadiness(
+            for: buildEntry(),
+            history: store.healthEntries,
+            profile: store.profile
+        )
+        if !readiness.components.isEmpty {
+            VStack(alignment: .leading, spacing: 12) {
+                sectionHeader("Свой Readiness (из HK)")
+                let rc = HealthService.readinessColor(score: readiness.score)
+                let scoreColor = Color(red: rc.r, green: rc.g, blue: rc.b)
+
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(spacing: 12) {
+                        ZStack {
+                            Circle().fill(scoreColor.opacity(0.15)).frame(width: 52, height: 52)
+                            VStack(spacing: 0) {
+                                Text("\(readiness.score)")
+                                    .font(.system(size: 20, weight: .black)).foregroundColor(scoreColor)
+                                Text("из 100").font(.system(size: 9)).foregroundColor(scoreColor.opacity(0.7))
+                            }
+                        }
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(readiness.status.capitalized)
+                                .font(.system(size: 16, weight: .bold)).foregroundColor(scoreColor)
+                            Text("HRV/RHR/сон/темп./дыхание")
+                                .font(.system(size: 11)).foregroundColor(.white.opacity(0.4))
+                        }
+                        Spacer()
+                    }
+
+                    if !readiness.warnings.isEmpty {
+                        VStack(alignment: .leading, spacing: 6) {
+                            ForEach(readiness.warnings, id: \.self) { w in
+                                HStack(alignment: .top, spacing: 8) {
+                                    Image(systemName: "exclamationmark.triangle.fill")
+                                        .font(.system(size: 12)).foregroundColor(.yellow)
+                                    Text(w).font(.system(size: 12)).foregroundColor(.yellow.opacity(0.9))
+                                }
+                            }
+                        }
+                    }
+
+                    Divider().background(Color.white.opacity(0.1))
+
+                    VStack(spacing: 6) {
+                        ForEach(readiness.components, id: \.label) { c in
+                            HStack(spacing: 8) {
+                                Text(c.label)
+                                    .font(.system(size: 12, weight: .medium))
+                                    .foregroundColor(.white.opacity(0.7))
+                                    .frame(width: 110, alignment: .leading)
+                                Text(c.detail)
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.white.opacity(0.55))
+                                    .lineLimit(1).truncationMode(.tail)
+                                Spacer()
+                                Text(deltaLabel(c.delta))
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundColor(deltaColor(c.delta))
+                            }
+                        }
+                    }
+                }
+                .padding(14)
+                .background(scoreColor.opacity(0.06))
+                .clipShape(RoundedRectangle(cornerRadius: 14))
+                .overlay(RoundedRectangle(cornerRadius: 14).stroke(scoreColor.opacity(0.2), lineWidth: 1))
+            }
+        }
+    }
+
+    private func deltaLabel(_ d: Int) -> String {
+        if d > 0 { return "+\(d)" }
+        if d < 0 { return "\(d)" }
+        return "0"
+    }
+
+    private func deltaColor(_ d: Int) -> Color {
+        if d > 0 { return Color(red: 0.13, green: 0.77, blue: 0.37) }   // green
+        if d < 0 { return Color(red: 0.94, green: 0.45, blue: 0.27) }   // red-orange
+        return Color.white.opacity(0.4)
+    }
+
+    // MARK: - Apple Health Auto-loaded Metrics (read-only)
+
+    @ViewBuilder
+    private var healthKitAutoMetricsSection: some View {
+        let hasCardio = entry.vo2max != nil || entry.respiratoryRate != nil
+                     || entry.cardioRecovery != nil || entry.walkingHR != nil
+        let hasActivity = entry.steps != nil || entry.standMin != nil || entry.exerciseMin != nil
+        let hasMindful = entry.mindfulMin != nil
+        let hasEffort = entry.workoutEffort != nil
+        let hasMood = entry.moodValence != nil
+
+        if hasCardio || hasActivity || hasMindful || hasEffort || hasMood {
+            VStack(alignment: .leading, spacing: 12) {
+                sectionHeader("Apple Health · доп.")
+                VStack(spacing: 10) {
+                    if let v = entry.vo2max {
+                        autoMetricRow(icon: "lungs.fill", label: "VO₂max",
+                                      value: String(format: "%.1f мл/кг/мин", v), color: .cyan)
+                    }
+                    if let v = entry.respiratoryRate {
+                        autoMetricRow(icon: "wind", label: "Частота дыхания (ночь)",
+                                      value: String(format: "%.1f /мин", v), color: .teal)
+                    }
+                    if let v = entry.cardioRecovery {
+                        autoMetricRow(icon: "heart.text.square", label: "Кардио-восст. 1 мин",
+                                      value: "−\(v) уд/мин", color: .red)
+                    }
+                    if let v = entry.walkingHR {
+                        autoMetricRow(icon: "figure.walk", label: "Walking HR",
+                                      value: "\(Int(v.rounded())) уд/мин", color: .orange)
+                    }
+                    if let v = entry.steps {
+                        autoMetricRow(icon: "shoeprints.fill", label: "Шаги",
+                                      value: stepsFormatted(v), color: .green)
+                    }
+                    if entry.standMin != nil || entry.exerciseMin != nil {
+                        autoMetricRow(icon: "circle.grid.cross", label: "Кольца активности",
+                                      value: ringsValue(stand: entry.standMin, exercise: entry.exerciseMin),
+                                      color: .pink)
+                    }
+                    if let m = entry.mindfulMin {
+                        let label = entry.mindfulSessions.map { "\(m) мин · \($0) сесс." } ?? "\(m) мин"
+                        autoMetricRow(icon: "brain.head.profile", label: "Осознанность",
+                                      value: label, color: .purple)
+                    }
+                    if let e = entry.workoutEffort {
+                        autoMetricRow(icon: "flame.fill", label: "Effort (тренировка)",
+                                      value: String(format: "%.1f / 10", e), color: .orange)
+                    }
+                    if let v = entry.moodValence {
+                        autoMetricRow(icon: "face.smiling", label: moodLabel(kind: entry.moodKind),
+                                      value: moodValue(valence: v, labels: entry.moodLabels), color: .yellow)
+                    }
+                }
+                .padding(14)
+                .background(Color.white.opacity(0.04))
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.08), lineWidth: 1))
+            }
+        }
+    }
+
+    private func autoMetricRow(icon: String, label: String, value: String, color: Color) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon).font(.system(size: 13)).foregroundColor(color).frame(width: 18)
+            Text(label).font(.system(size: 13)).foregroundColor(.white.opacity(0.6))
+            Spacer()
+            Text(value).font(.system(size: 13, weight: .medium)).foregroundColor(.white.opacity(0.9))
+        }
+    }
+
+    private func stepsFormatted(_ v: Int) -> String {
+        let f = NumberFormatter()
+        f.numberStyle = .decimal
+        f.groupingSeparator = " "
+        return f.string(from: NSNumber(value: v)) ?? "\(v)"
+    }
+
+    private func ringsValue(stand: Int?, exercise: Int?) -> String {
+        var parts: [String] = []
+        if let s = stand    { parts.append("стоя \(s) мин") }
+        if let e = exercise { parts.append("движение \(e) мин") }
+        return parts.joined(separator: " · ")
+    }
+
+    private func moodLabel(kind: String?) -> String {
+        switch kind {
+        case "dailyMood":        return "Настроение (день)"
+        case "momentaryEmotion": return "Настроение (момент)"
+        default:                 return "Настроение"
+        }
+    }
+
+    private func moodValue(valence: Double, labels: [String]?) -> String {
+        let valenceStr = String(format: "%+.2f", valence)
+        if let l = labels, !l.isEmpty {
+            return "\(valenceStr) · \(l.joined(separator: ", "))"
+        }
+        return valenceStr
     }
 
     // MARK: - Sub-views

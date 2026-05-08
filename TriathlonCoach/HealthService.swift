@@ -23,6 +23,9 @@ struct HealthService {
             let sign = v >= 0 ? "+" : ""
             lines.append("• Температура запястья (отклонение): \(sign)\(String(format: "%.2f", v))°C"); hasAny = true
         }
+        if let v = entry.vo2max            { lines.append("• VO₂max: \(String(format: "%.1f", v)) мл/(кг·мин)"); hasAny = true }
+        if let v = entry.cardioRecovery    { lines.append("• Кардио-восст. 1 мин: −\(v) уд/мин"); hasAny = true }
+        if let v = entry.walkingHR         { lines.append("• Walking HR: \(Int(v.rounded())) уд/мин"); hasAny = true }
         if let v = entry.weight            { lines.append("• Вес: \(String(format: "%.1f", v)) кг"); hasAny = true }
         if let s = entry.systolicBP, let d = entry.diastolicBP {
             lines.append("• Давление: \(s)/\(d) мм рт.ст."); hasAny = true
@@ -40,9 +43,47 @@ struct HealthService {
         }
         if let hr  = entry.sleepAvgHR  { lines.append("• Пульс во сне: \(hr) уд/мин") }
         if let hrv = entry.sleepAvgHRV { lines.append("• HRV во сне: \(Int(hrv)) мс") }
+        if let rr  = entry.respiratoryRate { lines.append("• Частота дыхания (ночь): \(String(format: "%.1f", rr)) /мин") }
         if let q   = entry.sleepQuality { lines.append("• Качество сна: \(q)/5") }
         if entry.sleepHours == nil      { lines.append("• (нет данных)") }
         lines.append("")
+
+        let hasActivity = entry.steps != nil || entry.standMin != nil || entry.exerciseMin != nil
+        if hasActivity {
+            lines.append("### Активность за день")
+            if let v = entry.steps { lines.append("• Шаги: \(v)") }
+            if entry.standMin != nil || entry.exerciseMin != nil {
+                var parts: [String] = []
+                if let s = entry.standMin    { parts.append("стоя \(s) мин") }
+                if let e = entry.exerciseMin { parts.append("движение \(e) мин") }
+                lines.append("• Кольца: \(parts.joined(separator: ", "))")
+            }
+            lines.append("")
+        }
+
+        let hasState = entry.mindfulMin != nil || entry.workoutEffort != nil || entry.moodValence != nil
+        if hasState {
+            lines.append("### Состояние и нагрузка")
+            if let m = entry.mindfulMin {
+                let suffix = entry.mindfulSessions.map { ", \($0) сесс." } ?? ""
+                lines.append("• Осознанность: \(m) мин\(suffix)")
+            }
+            if let e = entry.workoutEffort {
+                lines.append("• Effort тренировки: \(String(format: "%.1f", e))/10")
+            }
+            if let v = entry.moodValence {
+                let kind: String
+                switch entry.moodKind {
+                case "dailyMood":        kind = "дневное"
+                case "momentaryEmotion": kind = "момент"
+                default:                 kind = "—"
+                }
+                var line = "• Настроение (\(kind)): valence \(String(format: "%+.2f", v)) (диапазон −1..+1)"
+                if let l = entry.moodLabels, !l.isEmpty { line += ", метки: \(l.joined(separator: ", "))" }
+                lines.append(line)
+            }
+            lines.append("")
+        }
 
         let hasNutrition = entry.caloriesConsumed != nil || entry.proteinG != nil
         if hasNutrition {
@@ -134,5 +175,171 @@ struct HealthService {
         if s >= 60 { return (0.92, 0.70, 0.03) }   // yellow
         if s >= 40 { return (0.98, 0.45, 0.09) }   // orange
         return (0.94, 0.27, 0.27)                   // red
+    }
+
+    // MARK: - Local Readiness (computed from HealthKit signals only)
+
+    /// Component contribution to the local readiness score.
+    struct ReadinessComponent {
+        let label: String
+        let delta: Int       // signed contribution to base
+        let detail: String   // human-readable explanation
+    }
+
+    struct LocalReadiness {
+        let score: Int            // clamped 0...100
+        let status: String        // отличное/хорошее/удовлетворительное/слабое/плохое
+        let components: [ReadinessComponent]
+        let warnings: [String]    // red flags from recovery framework
+    }
+
+    /// Compute a readiness score from raw HK signals (no AI). Mirrors the
+    /// recovery-first framework in `project_tc_recovery_framework.md`.
+    /// `history` must include the target entry; we derive baselines from the
+    /// preceding days only.
+    static func computeLocalReadiness(
+        for entry: HealthDayEntry,
+        history: [HealthDayEntry],
+        profile: AthleteProfile
+    ) -> LocalReadiness {
+        let base = 75
+        var delta = 0
+        var components: [ReadinessComponent] = []
+        var warnings: [String] = []
+
+        // Sort prior entries (strictly before target date) most-recent first
+        let priors = history
+            .filter { $0.date < entry.date }
+            .sorted { $0.date > $1.date }
+
+        // ── HRV vs 7-day baseline ──────────────────────────────────────────
+        let hrv7 = priors.prefix(7).compactMap { $0.hrv.map(Double.init) }
+        let hrvBaseline = hrv7.count >= 3
+            ? hrv7.reduce(0, +) / Double(hrv7.count)
+            : nil
+        if let v = entry.hrv.map(Double.init) {
+            if let baseline = hrvBaseline {
+                let ratio = v / baseline
+                if ratio >= 1.10 {
+                    components.append(.init(label: "HRV", delta: +8,
+                        detail: "\(Int(v)) мс, +\(Int((ratio-1)*100))% к 7-дн (\(Int(baseline)) мс)"))
+                    delta += 8
+                } else if ratio >= 0.90 {
+                    components.append(.init(label: "HRV", delta: 0,
+                        detail: "\(Int(v)) мс, в норме (7-дн \(Int(baseline)) мс)"))
+                } else if ratio >= 0.80 {
+                    components.append(.init(label: "HRV", delta: -10,
+                        detail: "\(Int(v)) мс, \(Int((ratio-1)*100))% к 7-дн"))
+                    delta -= 10
+                } else {
+                    components.append(.init(label: "HRV", delta: -25,
+                        detail: "\(Int(v)) мс, \(Int((ratio-1)*100))% к 7-дн — red flag"))
+                    delta -= 25
+                    warnings.append("HRV утром −20%+ от 7-дн среднего → отдых")
+                }
+            } else {
+                components.append(.init(label: "HRV", delta: 0,
+                    detail: "\(Int(v)) мс (мало истории для baseline)"))
+            }
+        }
+
+        // ── RHR vs 60-day baseline ─────────────────────────────────────────
+        let rhr60 = priors.prefix(60).compactMap { $0.restingHR.map(Double.init) }
+        let rhrBaseline = rhr60.count >= 5
+            ? rhr60.reduce(0, +) / Double(rhr60.count)
+            : Double(profile.restingHR)
+        if let v = entry.restingHR.map(Double.init) {
+            let diff = v - rhrBaseline
+            if diff <= 1 {
+                components.append(.init(label: "Пульс покоя", delta: 0,
+                    detail: "\(Int(v)) уд/мин (база \(Int(rhrBaseline)))"))
+            } else if diff <= 3 {
+                components.append(.init(label: "Пульс покоя", delta: -5,
+                    detail: "\(Int(v)) уд/мин, +\(Int(diff)) к базе"))
+                delta -= 5
+            } else if diff <= 7 {
+                components.append(.init(label: "Пульс покоя", delta: -10,
+                    detail: "\(Int(v)) уд/мин, +\(Int(diff)) к базе"))
+                delta -= 10
+            } else {
+                components.append(.init(label: "Пульс покоя", delta: -15,
+                    detail: "\(Int(v)) уд/мин, +\(Int(diff)) к базе"))
+                delta -= 15
+            }
+        }
+
+        // ── Sleep ──────────────────────────────────────────────────────────
+        if let h = entry.sleepHours {
+            var d = 0
+            var note = "\(String(format: "%.1f", h)) ч"
+            if h >= 7.5       { d = 0 }
+            else if h >= 6.5  { d = -5 }
+            else if h >= 5.5  { d = -10 }
+            else              { d = -15 }
+            if let deep = entry.sleepDeepHours, deep < 0.5 {
+                d -= 5
+                note += ", глубокий <30 мин"
+                warnings.append("Deep sleep <30 мин → не делать high-intensity")
+            }
+            components.append(.init(label: "Сон", delta: d, detail: note))
+            delta += d
+        }
+        if let q = entry.sleepQuality {
+            if q >= 5      { components.append(.init(label: "Качество сна", delta: +3, detail: "\(q)/5")); delta += 3 }
+            else if q <= 2 { components.append(.init(label: "Качество сна", delta: -3, detail: "\(q)/5")); delta -= 3 }
+        }
+
+        // ── Wrist temperature ──────────────────────────────────────────────
+        if let t = entry.wristTemperatureDelta {
+            let abs_t = abs(t)
+            if abs_t > 0.5 {
+                // Check if elevated 3+ consecutive days
+                let priorDeltas = priors.prefix(3).compactMap { $0.wristTemperatureDelta }
+                let elevatedRun = priorDeltas.allSatisfy { abs($0) > 0.5 } && priorDeltas.count >= 2
+                if elevatedRun {
+                    components.append(.init(label: "Темп. запястья", delta: -10,
+                        detail: "Δ\(String(format: "%+.2f", t))°C, 3+ дня вне нормы"))
+                    delta -= 10
+                    warnings.append("Wrist Temp 3+ дня вне typical range → возможна болезнь")
+                } else {
+                    components.append(.init(label: "Темп. запястья", delta: -5,
+                        detail: "Δ\(String(format: "%+.2f", t))°C"))
+                    delta -= 5
+                }
+            }
+        }
+
+        // ── Respiratory rate ───────────────────────────────────────────────
+        if let rr = entry.respiratoryRate {
+            let rr14 = priors.prefix(14).compactMap { $0.respiratoryRate }
+            if rr14.count >= 5 {
+                let baseline = rr14.reduce(0, +) / Double(rr14.count)
+                let diff = rr - baseline
+                if diff > 2 {
+                    let priorRR = priors.prefix(2).compactMap { $0.respiratoryRate }
+                    let elevatedRun = priorRR.count == 2 && priorRR.allSatisfy { $0 - baseline > 2 }
+                    if elevatedRun {
+                        components.append(.init(label: "Дыхание", delta: -10,
+                            detail: "\(String(format: "%.1f", rr)) /мин, 2+ дня выше базы"))
+                        delta -= 10
+                        warnings.append("Respiratory Rate >baseline 2+ дня → возможна болезнь")
+                    } else {
+                        components.append(.init(label: "Дыхание", delta: -3,
+                            detail: "\(String(format: "%.1f", rr)) /мин, +\(String(format: "%.1f", diff)) к базе"))
+                        delta -= 3
+                    }
+                }
+            }
+        }
+
+        let score = max(0, min(100, base + delta))
+        let status: String
+        if score >= 85       { status = "отличное" }
+        else if score >= 70  { status = "хорошее" }
+        else if score >= 50  { status = "удовлетворительное" }
+        else if score >= 35  { status = "слабое" }
+        else                 { status = "плохое" }
+
+        return LocalReadiness(score: score, status: status, components: components, warnings: warnings)
     }
 }
