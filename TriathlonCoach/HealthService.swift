@@ -4,10 +4,24 @@ struct HealthService {
 
     // MARK: - Prompt Builder
 
-    static func buildPrompt(entry: HealthDayEntry, profile: AthleteProfile, plannedWorkouts: [WorkoutPlanJSON]) -> String {
+    static func buildPrompt(
+        entry: HealthDayEntry,
+        profile: AthleteProfile,
+        coaching: CoachingProfile,
+        dayWorkouts: [WorkoutPlanJSON],
+        weeklyWorkouts: [WorkoutPlanJSON]
+    ) -> String {
         var lines: [String] = []
-        lines.append("Ты — врач спортивной медицины и тренер по триатлону.")
+        lines.append(coaching.coachIntro())
+        lines.append("Также ты — врач спортивной медицины и опираешься на физиологию спорта.")
         lines.append("")
+
+        if let methodology = coaching.methodologyBlock() {
+            lines.append("### Методика подготовки")
+            lines.append(methodology)
+            lines.append("")
+        }
+
         lines.append("## Состояние здоровья атлета")
         lines.append("**Дата:** \(entry.formattedDate)")
         lines.append("**Атлет:** \(profile.name), макс. ЧСС \(profile.maxHR) уд/мин, пульс покоя \(profile.restingHR) уд/мин")
@@ -97,11 +111,73 @@ struct HealthService {
             lines.append("")
         }
 
-        if !plannedWorkouts.isEmpty {
-            lines.append("### Тренировки запланированы на сегодня")
-            for w in plannedWorkouts {
-                lines.append("• [\(w.sport.uppercased())] \(w.title) — \(w.duration_min) мин, зона \(w.target_zone)")
+        let dayCompleted = dayWorkouts.filter { $0.completed && $0.sport != "rest" }
+        let dayPending   = dayWorkouts.filter { !$0.completed && $0.sport != "rest" }
+        let dayRest      = dayWorkouts.filter { $0.sport == "rest" }
+        if !dayWorkouts.isEmpty {
+            lines.append("### Тренировки сегодня")
+            if !dayCompleted.isEmpty {
+                lines.append("**Выполнены:**")
+                for w in dayCompleted {
+                    var parts: [String] = []
+                    if let a = w.actual_duration_min {
+                        parts.append("\(a) мин (план \(w.duration_min))")
+                    } else {
+                        parts.append("\(w.duration_min) мин (план)")
+                    }
+                    if let hr = w.actual_avg_hr {
+                        var s = "ср. ЧСС \(hr)"
+                        if let mx = w.actual_max_hr { s += "/макс \(mx)" }
+                        s += " уд/мин"
+                        parts.append(s)
+                    }
+                    if let d = w.actual_distance_m, d > 0 {
+                        parts.append(d >= 1000 ? String(format: "%.2f км", d / 1000) : String(format: "%.0f м", d))
+                    }
+                    if let rpe = w.rpe_actual {
+                        let target = w.rpe_target.map { " (план \($0))" } ?? ""
+                        parts.append("RPE \(rpe)/10\(target)")
+                    }
+                    if let cal = w.actual_calories { parts.append("\(cal) ккал") }
+                    lines.append("• \(ReportBuilder.sportEmoji(w.sport)) ✅ \(w.title), зона \(w.target_zone) — \(parts.joined(separator: ", "))")
+                    if !w.notes_after.isEmpty {
+                        lines.append("   Заметки: \(w.notes_after)")
+                    }
+                }
             }
+            if !dayPending.isEmpty {
+                lines.append("**Запланированы (ещё не выполнены):**")
+                for w in dayPending {
+                    var line = "• \(ReportBuilder.sportEmoji(w.sport)) ⬜ \(w.title) — \(w.duration_min) мин, зона \(w.target_zone)"
+                    if let rpe = w.rpe_target { line += ", RPE \(rpe)/10" }
+                    lines.append(line)
+                }
+            }
+            if dayCompleted.isEmpty && dayPending.isEmpty && !dayRest.isEmpty {
+                lines.append("• 😴 День отдыха")
+            }
+            lines.append("")
+        }
+
+        if !weeklyWorkouts.isEmpty {
+            let s = weekLoadSummary(weeklyWorkouts)
+            lines.append("### Тренировочная нагрузка — последние 7 дней")
+            if s.plannedCount > 0 {
+                lines.append("• Выполнено: \(s.doneCount)/\(s.plannedCount) тренировок (\(Int(s.completionPct))%)")
+            } else {
+                lines.append("• Тренировок не запланировано")
+            }
+            if s.actualMin > 0 {
+                lines.append("• Объём факт: \(s.actualMin) мин (\(s.actualMin / 60)ч \(s.actualMin % 60)м), план \(s.plannedMin) мин")
+            } else if s.plannedMin > 0 {
+                lines.append("• Объём план: \(s.plannedMin) мин (\(s.plannedMin / 60)ч \(s.plannedMin % 60)м)")
+            }
+            if s.restDays > 0 { lines.append("• Дней отдыха: \(s.restDays)") }
+            for row in s.bySport {
+                lines.append("• \(ReportBuilder.sportEmoji(row.sport)) \(ReportBuilder.sportName(row.sport)): \(row.promptDetail)")
+            }
+            if let hr = s.avgHR { lines.append("• Средний ЧСС в выполненных: \(hr) уд/мин") }
+            if let rpe = s.avgRPE { lines.append("• Средний RPE: \(String(format: "%.1f", rpe))/10") }
             lines.append("")
         }
 
@@ -112,7 +188,11 @@ struct HealthService {
         }
 
         lines.append("---")
-        lines.append("Проанализируй состояние и готовность к тренировкам. Верни **только** JSON-блок:")
+        lines.append("Проанализируй состояние и готовность к тренировкам.")
+        lines.append("")
+        lines.append(coaching.adjustmentMode.promptInstruction)
+        lines.append("")
+        lines.append("Верни **только** JSON-блок:")
         lines.append("")
         lines.append("```json")
         lines.append("{")
@@ -128,6 +208,74 @@ struct HealthService {
         lines.append("```")
 
         return lines.joined(separator: "\n")
+    }
+
+    // MARK: - Week Load Summary
+
+    struct SportLoad {
+        let sport: String
+        let count: Int
+        let actualMin: Int
+        let plannedMin: Int
+        let distanceM: Double
+
+        var promptDetail: String {
+            var p: [String] = ["\(count) трен."]
+            if actualMin > 0 { p.append("\(actualMin) мин") }
+            if distanceM > 0 {
+                p.append(distanceM >= 1000
+                    ? String(format: "%.1f км", distanceM / 1000)
+                    : String(format: "%.0f м", distanceM))
+            }
+            return p.joined(separator: ", ")
+        }
+    }
+
+    struct WeekLoadSummary {
+        let doneCount: Int
+        let plannedCount: Int
+        let actualMin: Int
+        let plannedMin: Int
+        let completionPct: Double
+        let restDays: Int
+        let bySport: [SportLoad]
+        let avgHR: Int?
+        let avgRPE: Double?
+    }
+
+    static func weekLoadSummary(_ workouts: [WorkoutPlanJSON]) -> WeekLoadSummary {
+        let trainable = workouts.filter { $0.sport != "rest" }
+        let done = trainable.filter { $0.completed }
+        let plannedMin = trainable.reduce(0) { $0 + $1.duration_min }
+        let actualMin = done.compactMap { $0.actual_duration_min }.reduce(0, +)
+        let pct: Double = trainable.isEmpty ? 0 : Double(done.count) / Double(trainable.count) * 100
+        let restCount = workouts.filter { $0.sport == "rest" }.count
+
+        let order = ["swim", "bike", "bike_indoor", "run", "run_indoor",
+                     "strength", "core", "mobility", "stretch"]
+        let grouped = Dictionary(grouping: trainable, by: { $0.sport })
+        let bySport = grouped.keys
+            .sorted { (order.firstIndex(of: $0) ?? 99) < (order.firstIndex(of: $1) ?? 99) }
+            .map { sport -> SportLoad in
+                let ws = grouped[sport] ?? []
+                let mins = ws.compactMap { $0.actual_duration_min }.reduce(0, +)
+                let dist = ws.compactMap { $0.actual_distance_m }.reduce(0, +)
+                let plMin = ws.reduce(0) { $0 + $1.duration_min }
+                return SportLoad(sport: sport, count: ws.count,
+                                 actualMin: mins, plannedMin: plMin, distanceM: dist)
+            }
+
+        let hrs = done.compactMap { $0.actual_avg_hr }
+        let avgHR = hrs.isEmpty ? nil : hrs.reduce(0, +) / hrs.count
+        let rpes = done.compactMap { $0.rpe_actual }
+        let avgRPE = rpes.isEmpty ? nil : Double(rpes.reduce(0, +)) / Double(rpes.count)
+
+        return WeekLoadSummary(
+            doneCount: done.count, plannedCount: trainable.count,
+            actualMin: actualMin, plannedMin: plannedMin,
+            completionPct: pct, restDays: restCount,
+            bySport: bySport, avgHR: avgHR, avgRPE: avgRPE
+        )
     }
 
     // MARK: - Response Parser

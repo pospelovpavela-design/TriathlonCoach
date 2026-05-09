@@ -28,6 +28,7 @@ class AppStore: ObservableObject {
     @Published var workouts: [WorkoutPlanJSON] = []
     @Published var healthEntries: [HealthDayEntry] = []
     @Published var profile: AthleteProfile = AthleteProfile()
+    @Published var coaching: CoachingProfile = CoachingProfile()
     @Published var pendingPrompt: String = ""
     @Published var selectedTab: Int = 0
 
@@ -42,6 +43,7 @@ class AppStore: ObservableObject {
 
     init() {
         loadProfile()
+        loadCoaching()
         loadWorkouts()
         loadHealthEntries()
     }
@@ -84,6 +86,19 @@ class AppStore: ObservableObject {
         guard let data = UserDefaults.standard.data(forKey: "athlete_profile"),
               let p = try? JSONDecoder().decode(AthleteProfile.self, from: data) else { return }
         profile = p
+    }
+
+    func saveCoaching(_ c: CoachingProfile) {
+        coaching = c
+        if let data = try? JSONEncoder().encode(c) {
+            UserDefaults.standard.set(data, forKey: "coaching_profile")
+        }
+    }
+
+    private func loadCoaching() {
+        guard let data = UserDefaults.standard.data(forKey: "coaching_profile"),
+              let c = try? JSONDecoder().decode(CoachingProfile.self, from: data) else { return }
+        coaching = c
     }
 
     // MARK: - Mutations
@@ -166,6 +181,16 @@ class AppStore: ObservableObject {
     func workouts(forDay date: Date) -> [WorkoutPlanJSON] {
         let key = dateFormatter.string(from: date)
         return workouts.filter { $0.date == key }
+    }
+
+    /// Workouts in the 7-day window ending on `date` (inclusive).
+    func workouts(forLast7DaysEndingOn date: Date) -> [WorkoutPlanJSON] {
+        let cal = Calendar.current
+        guard let start = cal.date(byAdding: .day, value: -6, to: date) else { return [] }
+        let fmt = dateFormatter
+        let s = fmt.string(from: start)
+        let e = fmt.string(from: date)
+        return workouts.filter { $0.date >= s && $0.date <= e }.sorted { $0.date < $1.date }
     }
 
     private var dateFormatter: DateFormatter {

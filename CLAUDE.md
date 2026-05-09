@@ -6,21 +6,26 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Build:**
 ```bash
-cd /Users/pospelovsfamily/Documents/TriathlonCoach
-xcodebuild -scheme TriathlonCoach -destination 'id=00008110-000C65C13AC1801E' -configuration Debug build
+cd /Users/pavelpospelov/PavelPospelov/TriathlonCoach
+xcodebuild -scheme TriathlonCoach -destination 'id=DEVICE_ID' -configuration Debug build
 ```
 
 **Install on device:**
 ```bash
-xcrun devicectl device install app --device 00008110-000C65C13AC1801E \
-  "$(xcodebuild -scheme TriathlonCoach -destination 'id=00008110-000C65C13AC1801E' \
+xcrun devicectl device install app --device DEVICE_ID \
+  "$(xcodebuild -scheme TriathlonCoach -destination 'id=DEVICE_ID' \
      -configuration Debug -showBuildSettings 2>/dev/null \
      | grep ' BUILT_PRODUCTS_DIR' | head -1 | awk '{print $3}')/TriathlonCoach.app"
 ```
 
 **Launch (device must be unlocked):**
 ```bash
-xcrun devicectl device process launch --device 00008110-000C65C13AC1801E com.Pavel.TriathlonCoach
+xcrun devicectl device process launch --device DEVICE_ID com.Pavel.TriathlonCoach
+```
+
+**Get device ID (connect iPhone, run):**
+```bash
+xcrun devicectl list devices
 ```
 
 **Requirements:** iOS 17+ (WorkoutKit), Apple Watch Ultra/Series 4+ with watchOS 10+ for full functionality. WorkoutKit and HealthKit do not work in Simulator — must build for physical device.

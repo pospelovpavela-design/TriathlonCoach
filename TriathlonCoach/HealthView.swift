@@ -40,9 +40,11 @@ struct HealthView: View {
             }
         }
         .sheet(item: $selectedDayKey) { key in
+            let date = isoDate(key.id) ?? Date()
             HealthDaySheet(
                 entry: store.healthEntryOrNil(for: key.id) ?? HealthDayEntry(date: key.id),
-                plannedWorkouts: store.workouts(forDay: isoDate(key.id) ?? Date())
+                dayWorkouts: store.workouts(forDay: date),
+                weeklyWorkouts: store.workouts(forLast7DaysEndingOn: date)
             ) { updated in
                 store.updateHealthEntry(updated)
             }
@@ -234,7 +236,8 @@ struct HealthDayCard: View {
 
 struct HealthDaySheet: View {
     @State var entry: HealthDayEntry
-    let plannedWorkouts: [WorkoutPlanJSON]
+    let dayWorkouts: [WorkoutPlanJSON]
+    let weeklyWorkouts: [WorkoutPlanJSON]
     let onSave: (HealthDayEntry) -> Void
 
     @Environment(\.dismiss) var dismiss
@@ -279,6 +282,7 @@ struct HealthDaySheet: View {
     @State private var pasteText = ""
     @State private var showPasteArea = false
     @State private var parseError: String? = nil
+    @State private var showCoachingSheet = false
 
     var body: some View {
         NavigationStack {
@@ -356,6 +360,12 @@ struct HealthDaySheet: View {
                         // Apple Health auto-loaded metrics (read-only)
                         healthKitAutoMetricsSection
 
+                        // Today's workouts (planned + completed)
+                        todayWorkoutsSection
+
+                        // 7-day training load summary
+                        weeklyLoadSection
+
                         // Notes
                         sectionHeader("Заметки")
                         TextField("Самочувствие, симптомы...", text: $notes, axis: .vertical)
@@ -432,6 +442,9 @@ struct HealthDaySheet: View {
         VStack(spacing: 12) {
             sectionHeader("AI-Анализ готовности")
 
+            // Coaching profile card (configures the prompt)
+            coachingProfileCard
+
             // Show stored analysis
             if entry.hasAIAnalysis {
                 aiAnalysisCard
@@ -502,6 +515,41 @@ struct HealthDaySheet: View {
                         .disabled(pasteText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
                 }
+            }
+        }
+    }
+
+    private var coachingProfileCard: some View {
+        Button(action: { showCoachingSheet = true }) {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: "person.crop.rectangle.badge.gearshape")
+                    .font(.system(size: 16)).foregroundColor(.purple).frame(width: 22)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Настройки промта тренера")
+                        .font(.system(size: 13, weight: .semibold)).foregroundColor(.white)
+                    Text(store.coaching.summaryLine)
+                        .font(.system(size: 11)).foregroundColor(.white.opacity(0.55))
+                        .lineLimit(2)
+                    let goal = store.coaching.goalDescription.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !goal.isEmpty {
+                        Text(goal)
+                            .font(.system(size: 11)).foregroundColor(.purple.opacity(0.8))
+                            .lineLimit(1)
+                    }
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11)).foregroundColor(.white.opacity(0.3))
+            }
+            .padding(12)
+            .background(Color.purple.opacity(0.07))
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.purple.opacity(0.2), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .sheet(isPresented: $showCoachingSheet) {
+            CoachingProfileSheet(initial: store.coaching) { updated in
+                store.saveCoaching(updated)
             }
         }
     }
@@ -655,6 +703,170 @@ struct HealthDaySheet: View {
         if d > 0 { return Color(red: 0.13, green: 0.77, blue: 0.37) }   // green
         if d < 0 { return Color(red: 0.94, green: 0.45, blue: 0.27) }   // red-orange
         return Color.white.opacity(0.4)
+    }
+
+    // MARK: - Today's Workouts
+
+    @ViewBuilder
+    private var todayWorkoutsSection: some View {
+        if !dayWorkouts.isEmpty {
+            VStack(alignment: .leading, spacing: 12) {
+                sectionHeader("Тренировки сегодня")
+                VStack(spacing: 10) {
+                    ForEach(dayWorkouts) { w in
+                        todayWorkoutRow(w)
+                    }
+                }
+                .padding(14)
+                .background(Color.white.opacity(0.04))
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.08), lineWidth: 1))
+            }
+        }
+    }
+
+    private func todayWorkoutRow(_ w: WorkoutPlanJSON) -> some View {
+        let statusIcon: String = {
+            if w.sport == "rest" { return "moon.zzz.fill" }
+            return w.completed ? "checkmark.circle.fill" : "circle"
+        }()
+        let statusColor: Color = w.completed
+            ? Color(red: 0.13, green: 0.77, blue: 0.37)
+            : (w.sport == "rest" ? .indigo : .white.opacity(0.4))
+
+        return HStack(alignment: .top, spacing: 10) {
+            Image(systemName: statusIcon)
+                .font(.system(size: 14))
+                .foregroundColor(statusColor)
+                .frame(width: 18)
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 6) {
+                    Image(systemName: w.sportIcon)
+                        .font(.system(size: 11)).foregroundColor(.white.opacity(0.5))
+                    Text(w.title)
+                        .font(.system(size: 13, weight: .semibold)).foregroundColor(.white)
+                }
+                if w.sport != "rest" {
+                    HStack(spacing: 6) {
+                        if w.completed, let a = w.actual_duration_min {
+                            chipMini("\(a) мин", .blue)
+                            if a != w.duration_min {
+                                Text("план \(w.duration_min)")
+                                    .font(.system(size: 10)).foregroundColor(.white.opacity(0.35))
+                            }
+                        } else {
+                            chipMini("\(w.duration_min) мин", .gray)
+                        }
+                        chipMini(w.target_zone, .yellow)
+                        if let hr = w.actual_avg_hr {
+                            chipMini("♥ \(hr)", .red)
+                        }
+                        if let d = w.actual_distance_m, d > 0 {
+                            let s = d >= 1000
+                                ? String(format: "%.1f км", d / 1000)
+                                : String(format: "%.0f м", d)
+                            chipMini(s, .cyan)
+                        }
+                        if let rpe = w.rpe_actual {
+                            chipMini("RPE \(rpe)", .orange)
+                        }
+                    }
+                }
+                if !w.notes_after.isEmpty {
+                    Text(w.notes_after)
+                        .font(.system(size: 11)).foregroundColor(.white.opacity(0.5))
+                        .lineLimit(2)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func chipMini(_ text: String, _ color: Color) -> some View {
+        Text(text).font(.system(size: 10, weight: .medium))
+            .foregroundColor(color.opacity(0.95))
+            .padding(.horizontal, 5).padding(.vertical, 2)
+            .background(color.opacity(0.13))
+            .clipShape(RoundedRectangle(cornerRadius: 4))
+    }
+
+    // MARK: - Weekly Load
+
+    @ViewBuilder
+    private var weeklyLoadSection: some View {
+        if !weeklyWorkouts.isEmpty {
+            let s = HealthService.weekLoadSummary(weeklyWorkouts)
+            VStack(alignment: .leading, spacing: 12) {
+                sectionHeader("Нагрузка · 7 дней")
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(spacing: 8) {
+                        weekStat("\(s.doneCount)/\(s.plannedCount)", "трен.", .blue)
+                        weekStat("\(s.actualMin > 0 ? s.actualMin : s.plannedMin)",
+                                 s.actualMin > 0 ? "мин факт" : "мин план", .green)
+                        weekStat("\(Int(s.completionPct))%", "выпол.", .yellow)
+                        if s.restDays > 0 {
+                            weekStat("\(s.restDays)", "отдых", .indigo)
+                        }
+                    }
+                    if !s.bySport.isEmpty {
+                        Divider().background(Color.white.opacity(0.1))
+                        VStack(spacing: 6) {
+                            ForEach(s.bySport, id: \.sport) { row in
+                                HStack(spacing: 8) {
+                                    Text(ReportBuilder.sportEmoji(row.sport))
+                                        .font(.system(size: 13)).frame(width: 18)
+                                    Text(ReportBuilder.sportName(row.sport))
+                                        .font(.system(size: 12, weight: .medium))
+                                        .foregroundColor(.white.opacity(0.7))
+                                    Spacer()
+                                    Text(row.promptDetail)
+                                        .font(.system(size: 12))
+                                        .foregroundColor(.white.opacity(0.85))
+                                }
+                            }
+                        }
+                    }
+                    if s.avgHR != nil || s.avgRPE != nil {
+                        Divider().background(Color.white.opacity(0.1))
+                        HStack(spacing: 12) {
+                            if let hr = s.avgHR {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "heart.fill")
+                                        .font(.system(size: 10)).foregroundColor(.red.opacity(0.8))
+                                    Text("ср. \(hr) уд/мин")
+                                        .font(.system(size: 11)).foregroundColor(.white.opacity(0.7))
+                                }
+                            }
+                            if let rpe = s.avgRPE {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "flame.fill")
+                                        .font(.system(size: 10)).foregroundColor(.orange.opacity(0.8))
+                                    Text("RPE \(String(format: "%.1f", rpe))/10")
+                                        .font(.system(size: 11)).foregroundColor(.white.opacity(0.7))
+                                }
+                            }
+                            Spacer()
+                        }
+                    }
+                }
+                .padding(14)
+                .background(Color.white.opacity(0.04))
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.08), lineWidth: 1))
+            }
+        }
+    }
+
+    private func weekStat(_ value: String, _ label: String, _ color: Color) -> some View {
+        VStack(spacing: 2) {
+            Text(value).font(.system(size: 18, weight: .black)).foregroundColor(color)
+            Text(label).font(.system(size: 9, weight: .medium))
+                .foregroundColor(.white.opacity(0.5))
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 8)
+        .background(color.opacity(0.1))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
     // MARK: - Apple Health Auto-loaded Metrics (read-only)
@@ -908,7 +1120,9 @@ struct HealthDaySheet: View {
         let prompt = HealthService.buildPrompt(
             entry: buildEntry(),
             profile: store.profile,
-            plannedWorkouts: plannedWorkouts
+            coaching: store.coaching,
+            dayWorkouts: dayWorkouts,
+            weeklyWorkouts: weeklyWorkouts
         )
         UIPasteboard.general.string = prompt
         withAnimation { promptCopied = true }

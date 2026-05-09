@@ -4,12 +4,14 @@ struct SettingsView: View {
     @EnvironmentObject var store: AppStore
 
     @State private var profile: AthleteProfile = AthleteProfile()
+    @State private var showCoachingSheet = false
 
     var body: some View {
         ScrollView {
             VStack(spacing: 24) {
                 header
                 profileSection
+                coachingSection
                 zonesSection
                 Spacer(minLength: 40)
             }
@@ -18,6 +20,46 @@ struct SettingsView: View {
         .background(Color(red: 0.04, green: 0.04, blue: 0.06).ignoresSafeArea())
         .onAppear {
             profile = store.profile
+        }
+        .sheet(isPresented: $showCoachingSheet) {
+            CoachingProfileSheet(initial: store.coaching) { updated in
+                store.saveCoaching(updated)
+            }
+        }
+    }
+
+    // MARK: - Coaching prompt section
+
+    private var coachingSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionTitle("Промт тренера")
+            Button(action: { showCoachingSheet = true }) {
+                HStack(alignment: .top, spacing: 12) {
+                    Image(systemName: "person.crop.rectangle.badge.gearshape")
+                        .font(.system(size: 18)).foregroundColor(.purple).frame(width: 24)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(store.coaching.summaryLine)
+                            .font(.system(size: 14, weight: .semibold)).foregroundColor(.white)
+                        let goal = store.coaching.goalDescription.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if !goal.isEmpty {
+                            Text(goal)
+                                .font(.system(size: 12)).foregroundColor(.purple.opacity(0.85))
+                                .lineLimit(2)
+                        } else {
+                            Text("Настроить роль, цель, методику и режим корректировки")
+                                .font(.system(size: 12)).foregroundColor(.white.opacity(0.5))
+                        }
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12)).foregroundColor(.white.opacity(0.3))
+                }
+                .padding(14)
+                .background(Color.purple.opacity(0.08))
+                .clipShape(RoundedRectangle(cornerRadius: 14))
+                .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.purple.opacity(0.2), lineWidth: 1))
+            }
+            .buttonStyle(.plain)
         }
     }
 
