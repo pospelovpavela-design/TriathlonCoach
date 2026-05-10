@@ -3,7 +3,7 @@ import SwiftUI
 struct ChatView: View {
     @EnvironmentObject var store: AppStore
 
-    @State private var generatedPrompt: String = ""
+    @State private var promptOverride: String? = nil   // set by external pendingPrompt
     @State private var pastedResponse: String = ""
     @State private var extractedWorkouts: [WorkoutPlanJSON] = []
     @State private var extractedDeletes: [ClaudeService.DeleteRequest] = []
@@ -12,6 +12,10 @@ struct ChatView: View {
     @State private var copied = false
     @State private var selectedRequest: PlanRequest = .today
     @State private var todayPreferences: String = ""
+
+    private var generatedPrompt: String {
+        promptOverride ?? autoPrompt
+    }
 
     enum PlanRequest: String, CaseIterable {
         case today    = "Сегодня"
@@ -32,10 +36,9 @@ struct ChatView: View {
             .padding(.horizontal, 16)
         }
         .background(Color(red: 0.04, green: 0.04, blue: 0.06).ignoresSafeArea())
-        .onAppear { generatePrompt() }
         .onChange(of: store.pendingPrompt) { msg in
             guard !msg.isEmpty else { return }
-            generatedPrompt = msg
+            promptOverride = msg
             pastedResponse = ""
             extractedWorkouts = []
             extractedDeletes = []
@@ -43,7 +46,14 @@ struct ChatView: View {
             deletedCount = nil
             store.pendingPrompt = ""
         }
-        .onChange(of: selectedRequest) { _ in generatePrompt() }
+        .onChange(of: selectedRequest) { _ in
+            promptOverride = nil
+            pastedResponse = ""
+            extractedWorkouts = []
+            extractedDeletes = []
+            loadedCount  = nil
+            deletedCount = nil
+        }
     }
 
     // MARK: - Header
@@ -203,7 +213,6 @@ struct ChatView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 10))
                     .frame(minHeight: 60, maxHeight: 110)
                     .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.white.opacity(0.08)))
-                    .onChange(of: todayPreferences) { _ in generatePrompt() }
                 if todayPreferences.isEmpty {
                     Text("Время, локация, оборудование, что хочется/не хочется...")
                         .font(.system(size: 12)).foregroundColor(.white.opacity(0.22))
@@ -225,30 +234,9 @@ struct ChatView: View {
         }
     }
 
-    // MARK: - Logic
+    // MARK: - Prompt building
 
-    private func generatePrompt() {
-        let requestText: String
-        switch selectedRequest {
-        case .today:
-            let dayLabel = todayDateString()
-            requestText = """
-            Сегодня \(dayLabel). Оцени готовность атлета и **скорректируй сегодняшний план** под состояние организма. \
-            Если нужно — измени интенсивность, сократи объём, замени тип тренировки или предложи отдых. \
-            В JSON верни итоговый набор тренировок на сегодня (после твоей коррекции): сохранённые без изменений + изменённые с обновлёнными полями + новые. \
-            Поле title и date изменённой тренировки должны совпадать с исходными — это позволит приложению заменить её. Если предлагаешь отдых вместо тренировки — пришли запись с sport=\"rest\". \
-            Если тренировку надо удалить целиком — добавь в текст ответа строку формата `УДАЛИТЬ: \"<title>\" \"<yyyy-MM-dd>\"` для каждой такой тренировки.
-            """
-        case .thisWeek:
-            requestText = "Составь план тренировок на эту неделю (\(store.currentWeekRange())). Учти текущее состояние организма."
-        case .nextWeek:
-            requestText = "Составь план тренировок на следующую неделю (\(store.nextWeekRange())). Учти текущее состояние и тренд недели."
-        case .recovery:
-            requestText = "Составь восстановительную неделю (\(store.nextWeekRange())) — сниженный объём, только Z1–Z2."
-        case .preRace:
-            requestText = "Составь пред-соревновательную неделю (\(store.nextWeekRange())) — умеренный объём с активацией."
-        }
-
+    private var autoPrompt: String {
         let today = Date()
         let todayKey = isoKey(today)
         let healthEntry = store.healthEntryOrNil(for: todayKey)
@@ -261,20 +249,40 @@ struct ChatView: View {
             return r.components.isEmpty ? nil : r
         }
         let todayWorkouts = selectedRequest == .today ? store.workouts(forDay: today) : []
+        let weeklyWorkouts = store.workouts(forLast7DaysEndingOn: today)
 
-        generatedPrompt = ClaudeService.buildCopyablePrompt(
+        return ClaudeService.buildCopyablePrompt(
             profile: store.profile,
+            coaching: store.coaching,
             requestText: requestText,
             healthEntry: healthEntry,
             readiness: readiness,
             todayWorkouts: todayWorkouts,
+            weeklyWorkouts: weeklyWorkouts,
             preferences: todayPreferences
         )
-        extractedWorkouts = []
-        extractedDeletes = []
-        loadedCount  = nil
-        deletedCount = nil
-        pastedResponse = ""
+    }
+
+    private var requestText: String {
+        switch selectedRequest {
+        case .today:
+            let dayLabel = todayDateString()
+            return """
+            Сегодня \(dayLabel). Оцени готовность атлета и **скорректируй сегодняшний план** под состояние организма. \
+            Если нужно — измени интенсивность, сократи объём, замени тип тренировки или предложи отдых. \
+            В JSON верни итоговый набор тренировок на сегодня (после твоей коррекции): сохранённые без изменений + изменённые с обновлёнными полями + новые. \
+            Поле title и date изменённой тренировки должны совпадать с исходными — это позволит приложению заменить её. Если предлагаешь отдых вместо тренировки — пришли запись с sport=\"rest\". \
+            Если тренировку надо удалить целиком — добавь в текст ответа строку формата `УДАЛИТЬ: \"<title>\" \"<yyyy-MM-dd>\"` для каждой такой тренировки.
+            """
+        case .thisWeek:
+            return "Составь план тренировок на эту неделю (\(store.currentWeekRange())). Учти текущее состояние организма."
+        case .nextWeek:
+            return "Составь план тренировок на следующую неделю (\(store.nextWeekRange())). Учти текущее состояние и тренд недели."
+        case .recovery:
+            return "Составь восстановительную неделю (\(store.nextWeekRange())) — сниженный объём, только Z1–Z2."
+        case .preRace:
+            return "Составь пред-соревновательную неделю (\(store.nextWeekRange())) — умеренный объём с активацией."
+        }
     }
 
     private func isoKey(_ d: Date) -> String {

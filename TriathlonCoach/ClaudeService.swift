@@ -18,15 +18,24 @@ actor ClaudeService {
 
     static func buildCopyablePrompt(
         profile: AthleteProfile,
+        coaching: CoachingProfile = CoachingProfile(),
         requestText: String,
         healthEntry: HealthDayEntry? = nil,
         readiness: HealthService.LocalReadiness? = nil,
         todayWorkouts: [WorkoutPlanJSON] = [],
+        weeklyWorkouts: [WorkoutPlanJSON] = [],
         preferences: String = ""
     ) -> String {
         var lines: [String] = []
-        lines.append("Ты — профессиональный тренер по триатлону. \(requestText)")
+        lines.append("\(coaching.coachIntro()) \(requestText)")
         lines.append("")
+
+        if let m = coaching.methodologyBlock() {
+            lines.append("## Методика подготовки")
+            lines.append(m)
+            lines.append("")
+        }
+
         lines.append("## Профиль атлета")
         lines.append(profile.claudeContext)
         lines.append("")
@@ -80,13 +89,64 @@ actor ClaudeService {
             lines.append("")
         }
 
+        if let h = healthEntry, h.hasAIAnalysis {
+            lines.append("## AI-анализ готовности (из вкладки «Здоровье»)")
+            if let s = h.aiReadinessScore { lines.append("**Готовность:** \(s)/100\(h.aiStatus.map { " — \($0)" } ?? "")") }
+            if let s = h.aiSummary,      !s.isEmpty { lines.append("**Резюме:** \(s)") }
+            if let s = h.aiTrainingRec,  !s.isEmpty { lines.append("**Рек. по тренировке:** \(s)") }
+            if let s = h.aiRecoveryRec,  !s.isEmpty { lines.append("**Рек. по восстановлению:** \(s)") }
+            if let s = h.aiNutritionRec, !s.isEmpty { lines.append("**Рек. по питанию:** \(s)") }
+            if let w = h.aiWarnings, !w.isEmpty {
+                lines.append("**Предупреждения:**")
+                for x in w { lines.append("• \(x)") }
+            }
+            if let ts = h.aiGeneratedAt { lines.append("_(сгенерировано: \(ts))_") }
+            lines.append("")
+        }
+
+        if !weeklyWorkouts.isEmpty {
+            let s = HealthService.weekLoadSummary(weeklyWorkouts)
+            lines.append("## Тренировочная нагрузка — последние 7 дней")
+            if s.plannedCount > 0 {
+                lines.append("• Выполнено: \(s.doneCount)/\(s.plannedCount) тренировок (\(Int(s.completionPct))%)")
+            }
+            if s.actualMin > 0 {
+                lines.append("• Объём факт: \(s.actualMin) мин (\(s.actualMin / 60)ч \(s.actualMin % 60)м), план \(s.plannedMin) мин")
+            } else if s.plannedMin > 0 {
+                lines.append("• Объём план: \(s.plannedMin) мин")
+            }
+            if s.restDays > 0 { lines.append("• Дней отдыха: \(s.restDays)") }
+            for row in s.bySport {
+                lines.append("• \(ReportBuilder.sportEmoji(row.sport)) \(ReportBuilder.sportName(row.sport)): \(row.promptDetail)")
+            }
+            if let hr = s.avgHR { lines.append("• Средний ЧСС в выполненных: \(hr) уд/мин") }
+            if let rpe = s.avgRPE { lines.append("• Средний RPE: \(String(format: "%.1f", rpe))/10") }
+            lines.append("")
+        }
+
         if !todayWorkouts.isEmpty {
-            lines.append("## Запланировано на сегодня")
+            lines.append("## Сегодня — план и факт")
             for w in todayWorkouts {
-                var line = "• [\(w.sport.uppercased())] \(w.title) — \(w.duration_min) мин, цель \(w.target_zone)"
+                let mark = w.completed ? "✅" : (w.sport == "rest" ? "😴" : "⬜")
+                var line = "• \(ReportBuilder.sportEmoji(w.sport)) \(mark) \(w.title) — план \(w.duration_min) мин, цель \(w.target_zone)"
                 if let rpe = w.rpe_target { line += ", RPE \(rpe)/10" }
-                if w.completed { line += " ✓ выполнено" }
                 lines.append(line)
+                if w.completed {
+                    var f: [String] = []
+                    if let a = w.actual_duration_min { f.append("\(a) мин факт") }
+                    if let hr = w.actual_avg_hr {
+                        var s = "ср. ЧСС \(hr)"
+                        if let mx = w.actual_max_hr { s += "/макс \(mx)" }
+                        f.append(s)
+                    }
+                    if let d = w.actual_distance_m, d > 0 {
+                        f.append(d >= 1000 ? String(format: "%.2f км", d / 1000) : String(format: "%.0f м", d))
+                    }
+                    if let rpe = w.rpe_actual { f.append("RPE \(rpe)/10") }
+                    if let cal = w.actual_calories { f.append("\(cal) ккал") }
+                    if !f.isEmpty { lines.append("   факт: \(f.joined(separator: ", "))") }
+                    if !w.notes_after.isEmpty { lines.append("   заметки: \(w.notes_after)") }
+                }
                 if !w.intervals.isEmpty {
                     let ints = w.intervals.map { "\($0.duration_min)м\($0.zone)" }.joined(separator: " → ")
                     lines.append("   интервалы: \(ints)")

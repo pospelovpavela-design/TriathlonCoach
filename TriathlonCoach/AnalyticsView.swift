@@ -232,7 +232,11 @@ struct AnalyticsView: View {
         let summary = store.weekSummaryText(forWeek: referenceDate)
         let nextRange = store.nextWeekRange(relativeTo: referenceDate)
         let requestText = "\(summary)\n\nПроанализируй результаты этой недели и составь план тренировок на следующую неделю (\(nextRange))."
-        store.pendingPrompt = ClaudeService.buildCopyablePrompt(profile: store.profile, requestText: requestText)
+        store.pendingPrompt = ClaudeService.buildCopyablePrompt(
+            profile: store.profile,
+            coaching: store.coaching,
+            requestText: requestText
+        )
         store.selectedTab = 0
     }
 
