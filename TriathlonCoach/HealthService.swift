@@ -9,7 +9,9 @@ struct HealthService {
         profile: AthleteProfile,
         coaching: CoachingProfile,
         dayWorkouts: [WorkoutPlanJSON],
-        weeklyWorkouts: [WorkoutPlanJSON]
+        weeklyWorkouts: [WorkoutPlanJSON],
+        dayLogged: [LoggedWorkout] = [],
+        weeklyLogged: [LoggedWorkout] = []
     ) -> String {
         var lines: [String] = []
         lines.append(coaching.coachIntro())
@@ -156,11 +158,48 @@ struct HealthService {
             if dayCompleted.isEmpty && dayPending.isEmpty && !dayRest.isEmpty {
                 lines.append("• 😴 День отдыха")
             }
+
+            // Unmatched HK workouts on the day (not represented by a completed planned workout)
+            let extraLoggedToday = dayLogged.filter { lw in
+                let canon = canonicalSport(lw.sport)
+                return !dayCompleted.contains { canonicalSport($0.sport) == canon }
+            }
+            if !extraLoggedToday.isEmpty {
+                lines.append("**Из Apple Health (без плана):**")
+                for lw in extraLoggedToday {
+                    var parts: [String] = []
+                    parts.append("\(Int(lw.durationMin.rounded())) мин")
+                    if let hr = lw.avgHR {
+                        var s = "ср. ЧСС \(hr)"
+                        if let mx = lw.maxHR { s += "/макс \(mx)" }
+                        s += " уд/мин"
+                        parts.append(s)
+                    }
+                    if let s = lw.distanceString { parts.append(s) }
+                    if let cal = lw.calories { parts.append("\(cal) ккал") }
+                    if !lw.startTimeLabel.isEmpty { parts.append(lw.startTimeLabel) }
+                    if let src = lw.sourceName { parts.append("источник: \(src)") }
+                    lines.append("• \(ReportBuilder.sportEmoji(lw.sport)) 🟦 \(ReportBuilder.sportName(lw.sport)) — \(parts.joined(separator: ", "))")
+                }
+            }
+            lines.append("")
+        } else if !dayLogged.isEmpty {
+            // No planned workouts at all but there are HK workouts — show them
+            lines.append("### Тренировки сегодня (только Apple Health)")
+            for lw in dayLogged {
+                var parts: [String] = []
+                parts.append("\(Int(lw.durationMin.rounded())) мин")
+                if let hr = lw.avgHR { parts.append("ср. ЧСС \(hr) уд/мин") }
+                if let s = lw.distanceString { parts.append(s) }
+                if let cal = lw.calories { parts.append("\(cal) ккал") }
+                if !lw.startTimeLabel.isEmpty { parts.append(lw.startTimeLabel) }
+                lines.append("• \(ReportBuilder.sportEmoji(lw.sport)) \(ReportBuilder.sportName(lw.sport)) — \(parts.joined(separator: ", "))")
+            }
             lines.append("")
         }
 
-        if !weeklyWorkouts.isEmpty {
-            let s = weekLoadSummary(weeklyWorkouts)
+        if !weeklyWorkouts.isEmpty || !weeklyLogged.isEmpty {
+            let s = weekLoadSummary(weeklyWorkouts, loggedWorkouts: weeklyLogged)
             lines.append("### Тренировочная нагрузка — последние 7 дней")
             if s.plannedCount > 0 {
                 lines.append("• Выполнено: \(s.doneCount)/\(s.plannedCount) тренировок (\(Int(s.completionPct))%)")
@@ -243,39 +282,88 @@ struct HealthService {
         let avgRPE: Double?
     }
 
-    static func weekLoadSummary(_ workouts: [WorkoutPlanJSON]) -> WeekLoadSummary {
+    static func weekLoadSummary(
+        _ workouts: [WorkoutPlanJSON],
+        loggedWorkouts: [LoggedWorkout] = []
+    ) -> WeekLoadSummary {
         let trainable = workouts.filter { $0.sport != "rest" }
         let done = trainable.filter { $0.completed }
         let plannedMin = trainable.reduce(0) { $0 + $1.duration_min }
-        let actualMin = done.compactMap { $0.actual_duration_min }.reduce(0, +)
+        var actualMin = done.compactMap { $0.actual_duration_min }.reduce(0, +)
         let pct: Double = trainable.isEmpty ? 0 : Double(done.count) / Double(trainable.count) * 100
         let restCount = workouts.filter { $0.sport == "rest" }.count
 
+        // Dedup logged: skip a HK workout if a planned-completed workout exists on
+        // same date with the same canonical sport (its actuals already reflect this HK).
+        let extraLogged = loggedWorkouts.filter { lw in
+            let canon = canonicalSport(lw.sport)
+            return !done.contains { canonicalSport($0.sport) == canon && $0.date == lw.date }
+        }
+        actualMin += Int(extraLogged.reduce(0.0) { $0 + $1.durationMin }.rounded())
+
         let order = ["swim", "bike", "bike_indoor", "run", "run_indoor",
-                     "strength", "core", "mobility", "stretch"]
-        let grouped = Dictionary(grouping: trainable, by: { $0.sport })
-        let bySport = grouped.keys
+                     "strength", "core", "mobility", "stretch",
+                     "walk", "hiit", "rowing", "elliptical", "stairs", "other"]
+
+        // Per-sport: combine completed planned + extra logged
+        var sportToCount: [String: Int] = [:]
+        var sportToActualMin: [String: Int] = [:]
+        var sportToPlanMin: [String: Int] = [:]
+        var sportToDist: [String: Double] = [:]
+
+        for w in trainable {
+            sportToPlanMin[w.sport, default: 0] += w.duration_min
+            if w.completed {
+                sportToCount[w.sport, default: 0] += 1
+                sportToActualMin[w.sport, default: 0] += w.actual_duration_min ?? 0
+                sportToDist[w.sport, default: 0] += w.actual_distance_m ?? 0
+            }
+        }
+        for lw in extraLogged {
+            sportToCount[lw.sport, default: 0] += 1
+            sportToActualMin[lw.sport, default: 0] += Int(lw.durationMin.rounded())
+            sportToDist[lw.sport, default: 0] += lw.distanceM ?? 0
+        }
+
+        let allSports = Set(sportToCount.keys).union(sportToPlanMin.keys)
+        let bySport = allSports
             .sorted { (order.firstIndex(of: $0) ?? 99) < (order.firstIndex(of: $1) ?? 99) }
             .map { sport -> SportLoad in
-                let ws = grouped[sport] ?? []
-                let mins = ws.compactMap { $0.actual_duration_min }.reduce(0, +)
-                let dist = ws.compactMap { $0.actual_distance_m }.reduce(0, +)
-                let plMin = ws.reduce(0) { $0 + $1.duration_min }
-                return SportLoad(sport: sport, count: ws.count,
-                                 actualMin: mins, plannedMin: plMin, distanceM: dist)
+                SportLoad(
+                    sport: sport,
+                    count: sportToCount[sport] ?? 0,
+                    actualMin: sportToActualMin[sport] ?? 0,
+                    plannedMin: sportToPlanMin[sport] ?? 0,
+                    distanceM: sportToDist[sport] ?? 0
+                )
             }
 
-        let hrs = done.compactMap { $0.actual_avg_hr }
+        // Average HR: combine planned-completed actual_avg_hr + logged avgHR
+        var hrs = done.compactMap { $0.actual_avg_hr }
+        hrs += extraLogged.compactMap { $0.avgHR }
         let avgHR = hrs.isEmpty ? nil : hrs.reduce(0, +) / hrs.count
+
         let rpes = done.compactMap { $0.rpe_actual }
         let avgRPE = rpes.isEmpty ? nil : Double(rpes.reduce(0, +)) / Double(rpes.count)
 
+        let totalDoneCount = done.count + extraLogged.count
+        let totalPlanCount = trainable.count
+
         return WeekLoadSummary(
-            doneCount: done.count, plannedCount: trainable.count,
+            doneCount: totalDoneCount, plannedCount: totalPlanCount,
             actualMin: actualMin, plannedMin: plannedMin,
             completionPct: pct, restDays: restCount,
             bySport: bySport, avgHR: avgHR, avgRPE: avgRPE
         )
+    }
+
+    /// Map indoor variants to outdoor for cross-source dedup (HK doesn't always distinguish).
+    static func canonicalSport(_ s: String) -> String {
+        switch s {
+        case "run_indoor":  return "run"
+        case "bike_indoor": return "bike"
+        default:            return s
+        }
     }
 
     // MARK: - Response Parser

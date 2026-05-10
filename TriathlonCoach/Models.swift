@@ -116,6 +116,62 @@ struct HRZone {
     }
 }
 
+// MARK: - Logged workout (raw HKWorkout from Apple Health)
+
+struct LoggedWorkout: Codable, Identifiable, Equatable {
+    var id: UUID = UUID()
+    var sport: String              // mapped to our sport keys (or "walk"/"hike"/"rowing"/"other")
+    var date: String               // yyyy-MM-dd of startTime (local tz)
+    var startTimeISO: String       // ISO8601 — stable identity for dedup
+    var durationMin: Double
+    var avgHR: Int?
+    var maxHR: Int?
+    var distanceM: Double?
+    var calories: Int?
+    var sourceName: String?        // "Apple Watch", "Strava", "Garmin Connect", ...
+
+    enum CodingKeys: String, CodingKey {
+        case id, sport, date, startTimeISO, durationMin, avgHR, maxHR, distanceM, calories, sourceName
+    }
+
+    var startDate: Date? {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
+        return f.date(from: startTimeISO)
+    }
+
+    var startTimeLabel: String {
+        guard let d = startDate else { return "" }
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "ru_RU")
+        f.dateFormat = "HH:mm"
+        return f.string(from: d)
+    }
+
+    var paceSecPerKm: Double? {
+        guard let d = distanceM, d > 0, durationMin > 0 else { return nil }
+        return (durationMin * 60) / (d / 1000)
+    }
+    var speedKmh: Double? {
+        guard let d = distanceM, durationMin > 0 else { return nil }
+        return (d / 1000) / (durationMin / 60)
+    }
+    var paceString: String? {
+        guard let p = paceSecPerKm else { return nil }
+        return String(format: "%d:%02d /км", Int(p) / 60, Int(p) % 60)
+    }
+    var speedString: String? {
+        guard let s = speedKmh else { return nil }
+        return String(format: "%.1f км/ч", s)
+    }
+    var distanceString: String? {
+        guard let d = distanceM, d > 0 else { return nil }
+        return d >= 1000
+            ? String(format: "%.2f км", d / 1000)
+            : String(format: "%.0f м", d)
+    }
+}
+
 // MARK: - Health Day Entry
 
 struct HealthDayEntry: Codable, Identifiable {

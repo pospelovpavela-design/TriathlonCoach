@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ChatView: View {
     @EnvironmentObject var store: AppStore
+    @EnvironmentObject var healthReader: HealthKitReader
 
     @State private var promptOverride: String? = nil   // set by external pendingPrompt
     @State private var pastedResponse: String = ""
@@ -12,6 +13,8 @@ struct ChatView: View {
     @State private var copied = false
     @State private var selectedRequest: PlanRequest = .today
     @State private var todayPreferences: String = ""
+    @FocusState private var prefsFocused: Bool
+    @FocusState private var pasteFocused: Bool
 
     private var generatedPrompt: String {
         promptOverride ?? autoPrompt
@@ -35,7 +38,21 @@ struct ChatView: View {
             }
             .padding(.horizontal, 16)
         }
+        .scrollDismissesKeyboard(.interactively)
         .background(Color(red: 0.04, green: 0.04, blue: 0.06).ignoresSafeArea())
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("Готово") {
+                    prefsFocused = false
+                    pasteFocused = false
+                }
+                .fontWeight(.semibold)
+            }
+        }
+        .task {
+            await store.refreshLoggedWorkouts(daysBack: 13, healthReader: healthReader)
+        }
         .onChange(of: store.pendingPrompt) { msg in
             guard !msg.isEmpty else { return }
             promptOverride = msg
@@ -128,6 +145,7 @@ struct ChatView: View {
 
             ZStack(alignment: .topLeading) {
                 TextEditor(text: $pastedResponse)
+                    .focused($pasteFocused)
                     .font(.system(size: 12, design: .monospaced))
                     .foregroundColor(.white)
                     .scrollContentBackground(.hidden)
@@ -206,6 +224,7 @@ struct ChatView: View {
                 .foregroundColor(.white.opacity(0.55)).tracking(1)
             ZStack(alignment: .topLeading) {
                 TextEditor(text: $todayPreferences)
+                    .focused($prefsFocused)
                     .font(.system(size: 13))
                     .foregroundColor(.white)
                     .scrollContentBackground(.hidden)
@@ -250,6 +269,8 @@ struct ChatView: View {
         }
         let todayWorkouts = selectedRequest == .today ? store.workouts(forDay: today) : []
         let weeklyWorkouts = store.workouts(forLast7DaysEndingOn: today)
+        let todayLogged = selectedRequest == .today ? store.loggedWorkouts(forDay: today) : []
+        let weeklyLogged = store.loggedWorkouts(forLast7DaysEndingOn: today)
 
         return ClaudeService.buildCopyablePrompt(
             profile: store.profile,
@@ -259,6 +280,8 @@ struct ChatView: View {
             readiness: readiness,
             todayWorkouts: todayWorkouts,
             weeklyWorkouts: weeklyWorkouts,
+            todayLogged: todayLogged,
+            weeklyLogged: weeklyLogged,
             preferences: todayPreferences
         )
     }
@@ -300,6 +323,8 @@ struct ChatView: View {
     }
 
     private func copyPrompt() {
+        prefsFocused = false
+        pasteFocused = false
         UIPasteboard.general.string = generatedPrompt
         withAnimation { copied = true }
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) { withAnimation { copied = false } }

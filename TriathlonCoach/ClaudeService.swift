@@ -24,6 +24,8 @@ actor ClaudeService {
         readiness: HealthService.LocalReadiness? = nil,
         todayWorkouts: [WorkoutPlanJSON] = [],
         weeklyWorkouts: [WorkoutPlanJSON] = [],
+        todayLogged: [LoggedWorkout] = [],
+        weeklyLogged: [LoggedWorkout] = [],
         preferences: String = ""
     ) -> String {
         var lines: [String] = []
@@ -104,8 +106,8 @@ actor ClaudeService {
             lines.append("")
         }
 
-        if !weeklyWorkouts.isEmpty {
-            let s = HealthService.weekLoadSummary(weeklyWorkouts)
+        if !weeklyWorkouts.isEmpty || !weeklyLogged.isEmpty {
+            let s = HealthService.weekLoadSummary(weeklyWorkouts, loggedWorkouts: weeklyLogged)
             lines.append("## Тренировочная нагрузка — последние 7 дней")
             if s.plannedCount > 0 {
                 lines.append("• Выполнено: \(s.doneCount)/\(s.plannedCount) тренировок (\(Int(s.completionPct))%)")
@@ -124,7 +126,7 @@ actor ClaudeService {
             lines.append("")
         }
 
-        if !todayWorkouts.isEmpty {
+        if !todayWorkouts.isEmpty || !todayLogged.isEmpty {
             lines.append("## Сегодня — план и факт")
             for w in todayWorkouts {
                 let mark = w.completed ? "✅" : (w.sport == "rest" ? "😴" : "⬜")
@@ -150,6 +152,27 @@ actor ClaudeService {
                 if !w.intervals.isEmpty {
                     let ints = w.intervals.map { "\($0.duration_min)м\($0.zone)" }.joined(separator: " → ")
                     lines.append("   интервалы: \(ints)")
+                }
+            }
+
+            // Unmatched HK workouts on the day
+            let completedSports = Set(todayWorkouts.filter { $0.completed }.map { HealthService.canonicalSport($0.sport) })
+            let extraLogged = todayLogged.filter { !completedSports.contains(HealthService.canonicalSport($0.sport)) }
+            if !extraLogged.isEmpty {
+                lines.append("**Из Apple Health (без плана):**")
+                for lw in extraLogged {
+                    var parts: [String] = []
+                    parts.append("\(Int(lw.durationMin.rounded())) мин")
+                    if let hr = lw.avgHR {
+                        var s = "ср. ЧСС \(hr)"
+                        if let mx = lw.maxHR { s += "/макс \(mx)" }
+                        parts.append(s)
+                    }
+                    if let s = lw.distanceString { parts.append(s) }
+                    if let cal = lw.calories { parts.append("\(cal) ккал") }
+                    if !lw.startTimeLabel.isEmpty { parts.append(lw.startTimeLabel) }
+                    if let src = lw.sourceName { parts.append("источник: \(src)") }
+                    lines.append("• \(ReportBuilder.sportEmoji(lw.sport)) 🟦 \(ReportBuilder.sportName(lw.sport)) — \(parts.joined(separator: ", "))")
                 }
             }
             lines.append("")

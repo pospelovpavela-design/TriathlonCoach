@@ -530,6 +530,12 @@ struct ReportBuilder {
         case "core":        return "Кор"
         case "stretch":     return "Растяжка"
         case "rest":        return "Отдых"
+        case "walk":        return "Ходьба"
+        case "rowing":      return "Гребля"
+        case "elliptical":  return "Эллипсоид"
+        case "stairs":      return "Степпер"
+        case "hiit":        return "HIIT"
+        case "other":       return "Активность"
         default:            return sport
         }
     }
@@ -543,6 +549,12 @@ struct ReportBuilder {
         case "core":        return "💪"
         case "mobility", "stretch": return "🧘"
         case "rest":        return "😴"
+        case "walk":        return "🚶"
+        case "rowing":      return "🚣"
+        case "elliptical":  return "🌀"
+        case "stairs":      return "🪜"
+        case "hiit":        return "🔥"
+        case "other":       return "💥"
         default:            return "•"
         }
     }

@@ -15,11 +15,34 @@ struct AnalyticsView: View {
     }
     private var weekWorkouts: [WorkoutPlanJSON] { store.workouts(forWeek: referenceDate) }
     private var trainable: [WorkoutPlanJSON] { weekWorkouts.filter { $0.sport != "rest" } }
-    private var done: Int { trainable.filter { $0.completed }.count }
+    private var weekLogged: [LoggedWorkout] {
+        let (mon, sun) = store.weekBounds(containing: referenceDate)
+        let fmt = DateFormatter(); fmt.locale = Locale(identifier: "en_US_POSIX"); fmt.dateFormat = "yyyy-MM-dd"
+        let s = fmt.string(from: mon)
+        let e = fmt.string(from: sun)
+        return store.loggedWorkouts.filter { $0.date >= s && $0.date <= e }
+            .sorted { $0.startTimeISO < $1.startTimeISO }
+    }
+    /// HK workouts that aren't represented by a completed planned workout (same date + canonical sport).
+    private var extraLogged: [LoggedWorkout] {
+        let completedKeys = Set(trainable.filter { $0.completed }.map {
+            "\($0.date)|\(HealthService.canonicalSport($0.sport))"
+        })
+        return weekLogged.filter {
+            !completedKeys.contains("\($0.date)|\(HealthService.canonicalSport($0.sport))")
+        }
+    }
+    private var plannedDone: Int { trainable.filter { $0.completed }.count }
+    private var done: Int { plannedDone + extraLogged.count }
     private var totalPlanned: Int { trainable.reduce(0) { $0 + $1.duration_min } }
-    private var totalActual: Int { weekWorkouts.compactMap { $0.actual_duration_min }.reduce(0, +) }
+    private var totalActual: Int {
+        let plannedActual = weekWorkouts.compactMap { $0.actual_duration_min }.reduce(0, +)
+        let loggedActual = Int(extraLogged.reduce(0.0) { $0 + $1.durationMin }.rounded())
+        return plannedActual + loggedActual
+    }
     private var avgHR: Int? {
-        let hrs = weekWorkouts.compactMap { $0.actual_avg_hr }
+        var hrs = weekWorkouts.compactMap { $0.actual_avg_hr }
+        hrs += extraLogged.compactMap { $0.avgHR }
         guard !hrs.isEmpty else { return nil }
         return hrs.reduce(0, +) / hrs.count
     }
@@ -33,7 +56,7 @@ struct AnalyticsView: View {
                     VStack(spacing: 16) {
                         statsRow
                         workoutList
-                        if !weekWorkouts.isEmpty {
+                        if !weekWorkouts.isEmpty || !extraLogged.isEmpty {
                             nextWeekButton
                             weekReportButton
                         }
@@ -91,7 +114,10 @@ struct AnalyticsView: View {
 
     private var statsRow: some View {
         HStack(spacing: 10) {
-            StatCard(title: "Выполнено", value: "\(done)/\(trainable.count)", color: .green)
+            let doneValue = extraLogged.isEmpty
+                ? "\(plannedDone)/\(trainable.count)"
+                : "\(plannedDone)/\(trainable.count)+\(extraLogged.count)"
+            StatCard(title: "Выполнено", value: doneValue, color: .green)
             StatCard(title: "План", value: "\(totalPlanned)м", color: .blue)
             StatCard(title: "Факт", value: totalActual > 0 ? "\(totalActual)м" : "—", color: .orange)
             if let hr = avgHR {
@@ -104,7 +130,7 @@ struct AnalyticsView: View {
 
     private var workoutList: some View {
         VStack(spacing: 12) {
-            if weekWorkouts.isEmpty {
+            if weekWorkouts.isEmpty && extraLogged.isEmpty {
                 Text("Нет тренировок на этой неделе")
                     .font(.system(size: 15)).foregroundColor(.white.opacity(0.4))
                     .frame(maxWidth: .infinity).padding(.vertical, 40)
@@ -138,6 +164,9 @@ struct AnalyticsView: View {
                                     Label("Удалить тренировку", systemImage: "trash")
                                 }
                             }
+                        }
+                        ForEach(group.logged) { lw in
+                            LoggedAnalyticsRow(workout: lw)
                         }
                     }
                 }
@@ -232,10 +261,15 @@ struct AnalyticsView: View {
         let summary = store.weekSummaryText(forWeek: referenceDate)
         let nextRange = store.nextWeekRange(relativeTo: referenceDate)
         let requestText = "\(summary)\n\nПроанализируй результаты этой недели и составь план тренировок на следующую неделю (\(nextRange))."
+        let today = Date()
         store.pendingPrompt = ClaudeService.buildCopyablePrompt(
             profile: store.profile,
             coaching: store.coaching,
-            requestText: requestText
+            requestText: requestText,
+            todayWorkouts: store.workouts(forDay: today),
+            weeklyWorkouts: store.workouts(forLast7DaysEndingOn: today),
+            todayLogged: store.loggedWorkouts(forDay: today),
+            weeklyLogged: store.loggedWorkouts(forLast7DaysEndingOn: today)
         )
         store.selectedTab = 0
     }
@@ -251,6 +285,7 @@ struct AnalyticsView: View {
         let date: String
         let label: String
         let workouts: [WorkoutPlanJSON]
+        let logged: [LoggedWorkout]
     }
 
     private func groupedByDay() -> [DayGroup] {
@@ -261,21 +296,21 @@ struct AnalyticsView: View {
         isoFmt.locale = Locale(identifier: "en_US_POSIX")
         isoFmt.dateFormat = "yyyy-MM-dd"
 
-        var seen = [String]()
-        var groups = [DayGroup]()
-        for w in weekWorkouts {
-            let key = w.date
-            if !seen.contains(key) {
-                seen.append(key)
-                let dayW = weekWorkouts.filter { $0.date == key }
-                let label: String
-                if let d = isoFmt.date(from: key) {
-                    label = fmt.string(from: d).capitalized
-                } else { label = key }
-                groups.append(DayGroup(date: key, label: label, workouts: dayW))
-            }
+        // Union of dates from planned and extra-logged
+        var allDates = Set(weekWorkouts.map { $0.date })
+        for lw in extraLogged { allDates.insert(lw.date) }
+
+        var groups: [DayGroup] = []
+        for key in allDates.sorted() {
+            let dayW = weekWorkouts.filter { $0.date == key }
+            let dayL = extraLogged.filter { $0.date == key }
+            let label: String
+            if let d = isoFmt.date(from: key) {
+                label = fmt.string(from: d).capitalized
+            } else { label = key }
+            groups.append(DayGroup(date: key, label: label, workouts: dayW, logged: dayL))
         }
-        return groups.sorted { $0.date < $1.date }
+        return groups
     }
 
     private func copyDayReport(date: String, workouts: [WorkoutPlanJSON]) async {
@@ -401,6 +436,55 @@ struct AnalyticsRow: View {
         case "rest":        return "moon.zzz"
         default:            return "heart"
         }
+    }
+}
+
+// MARK: - Logged (Apple Health) Analytics Row
+
+struct LoggedAnalyticsRow: View {
+    let workout: LoggedWorkout
+
+    var body: some View {
+        HStack(spacing: 12) {
+            ZStack {
+                Circle().fill(Color.cyan.opacity(0.12)).frame(width: 40, height: 40)
+                Image(systemName: "applewatch.radiowaves.left.and.right")
+                    .font(.system(size: 14)).foregroundColor(.cyan.opacity(0.85))
+            }
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(ReportBuilder.sportEmoji(workout.sport)).font(.system(size: 13))
+                    Text(ReportBuilder.sportName(workout.sport))
+                        .font(.system(size: 14, weight: .semibold)).foregroundColor(.white)
+                    Text("Apple Health")
+                        .font(.system(size: 9, weight: .black)).tracking(1)
+                        .foregroundColor(.cyan)
+                        .padding(.horizontal, 5).padding(.vertical, 2)
+                        .background(Color.cyan.opacity(0.13))
+                        .clipShape(RoundedRectangle(cornerRadius: 3))
+                }
+                HStack(spacing: 8) {
+                    Text(workout.date).font(.system(size: 12)).foregroundColor(.white.opacity(0.3))
+                    Text("\(Int(workout.durationMin.rounded())) мин")
+                        .font(.system(size: 12, weight: .medium)).foregroundColor(.orange)
+                    if let hr = workout.avgHR {
+                        Text("♥ \(hr)").font(.system(size: 12, weight: .medium))
+                            .foregroundColor(.red.opacity(0.8))
+                    }
+                    if let s = workout.distanceString {
+                        Text(s).font(.system(size: 12)).foregroundColor(.cyan.opacity(0.7))
+                    }
+                }
+                if let src = workout.sourceName {
+                    Text(src).font(.system(size: 11)).foregroundColor(.white.opacity(0.35))
+                }
+            }
+            Spacer()
+        }
+        .padding(12)
+        .background(Color.cyan.opacity(0.04))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.cyan.opacity(0.15), lineWidth: 1))
     }
 }
 
@@ -829,8 +913,19 @@ struct LogWorkoutSheet: View {
         if allWDs.isEmpty && planDate != today {
             allWDs = await healthReader.allWorkoutData(sport: workout.sport, on: today)
         }
-        availableHealthWorkouts = allWDs
-        let wd = allWDs.first
+
+        // Filter to workouts matching the planned activity type (canonical comparison).
+        // This prevents an auto-detected "Other"/"Walk" workout from being picked
+        // for a "run" plan.
+        let canonPlan = HealthService.canonicalSport(workout.sport)
+        let typeMatched = allWDs.filter { HealthService.canonicalSport($0.sport) == canonPlan }
+        let candidatePool = typeMatched.isEmpty ? allWDs : typeMatched
+        availableHealthWorkouts = candidatePool
+
+        // Pick the LONGEST matching-sport HKWorkout. Plan duration is intentionally
+        // not used in this comparison — actual data is whatever HealthKit recorded
+        // (89 min stays 89, not snapped to plan 80).
+        let wd = candidatePool.max(by: { $0.durationMin < $1.durationMin })
 
         // Step 2: wellness in parallel
         let workoutEnd = wd?.endTime ?? Calendar.current.date(byAdding: .hour, value: 20, to: wellnessDate) ?? wellnessDate
@@ -848,8 +943,8 @@ struct LogWorkoutSheet: View {
             sleepData = await healthReader.sleepResult(nightBefore: yesterday)
         }
 
-        // Auto-fill workout fields (only if empty — don't overwrite manual input)
-        if let wd = wd { applyWorkoutFields(wd, overwrite: false) }
+        // User explicitly tapped the read button — overwrite stale fields with fresh HK data.
+        if let wd = wd { applyWorkoutFields(wd, overwrite: true) }
         if hrRecovery.isEmpty, let r = hrRecovVal { hrRecovery = "\(r)" }
         if let v = hrvVal,       hrvBefore.isEmpty { hrvBefore = "\(Int(v))" }
         if let v = hrvAfterData, hrvAfter.isEmpty  { hrvAfter  = "\(Int(v))" }

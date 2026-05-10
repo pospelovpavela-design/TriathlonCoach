@@ -94,6 +94,7 @@ class HealthKitReader: ObservableObject {
         let startTime: Date
         let endTime: Date
         let intervals: [Interval]
+        var sport: String = "other"   // mapped from HKWorkoutActivityType
 
         var displayName: String {
             let fmt = DateFormatter()
@@ -190,23 +191,32 @@ class HealthKitReader: ObservableObject {
         return WorkoutHealthData(durationMin: durationMin, avgHR: avgHR, maxHR: maxHR,
                                   distanceM: distanceM, calories: calories,
                                   startTime: wkt.startDate, endTime: wkt.endDate,
-                                  intervals: intervals)
+                                  intervals: intervals,
+                                  sport: Self.sportKey(for: wkt.workoutActivityType))
     }
 
     /// Build WorkoutHealthData from a single HKWorkout
     private func healthData(from wkt: HKWorkout, sport: String) async -> WorkoutHealthData {
+        let actualSport = Self.sportKey(for: wkt.workoutActivityType)
         let durationMin = wkt.duration / 60
-        let (avgHR, maxHR) = await hrStats(from: wkt.startDate, to: wkt.endDate)
-        let distType = distanceType(for: sport)
+
+        // Use workout-bound statistics so values match Apple Fitness exactly
+        // (only samples recorded as part of THIS workout, not all HR samples in the time range).
+        let bpm = HKUnit(from: "count/min")
+        let hrStats = wkt.statistics(for: HKQuantityType(.heartRate))
+        let avgHR: Int? = hrStats?.averageQuantity().map { Int($0.doubleValue(for: bpm).rounded()) }
+        let maxHR: Int? = hrStats?.maximumQuantity().map { Int($0.doubleValue(for: bpm).rounded()) }
+
+        // Distance metric: use the workout's actual sport, not the planned sport,
+        // so we don't query running-distance for a cycling workout etc.
+        let distType = distanceType(for: actualSport)
         var distanceM: Double? = nil
         if let dt = distType {
-            distanceM = await statSum(type: dt, from: wkt.startDate, to: wkt.endDate, unit: .meter())
+            distanceM = wkt.statistics(for: dt)?.sumQuantity()?.doubleValue(for: .meter())
         }
-        let cals: Int?
-        if let c = await statSum(type: HKQuantityType(.activeEnergyBurned),
-                                  from: wkt.startDate, to: wkt.endDate, unit: .kilocalorie()) {
-            cals = Int(c.rounded())
-        } else { cals = nil }
+
+        let cals: Int? = wkt.statistics(for: HKQuantityType(.activeEnergyBurned))?
+            .sumQuantity().map { Int($0.doubleValue(for: .kilocalorie()).rounded()) }
 
         var intervals: [WorkoutHealthData.Interval] = []
         for (idx, activity) in wkt.workoutActivities.enumerated() {
@@ -231,7 +241,7 @@ class HealthKitReader: ObservableObject {
         return WorkoutHealthData(durationMin: durationMin, avgHR: avgHR, maxHR: maxHR,
                                   distanceM: distanceM, calories: cals,
                                   startTime: wkt.startDate, endTime: wkt.endDate,
-                                  intervals: intervals)
+                                  intervals: intervals, sport: actualSport)
     }
 
     /// Returns all workouts found in ±1 day of the given date (sorted by start time ascending)
@@ -249,12 +259,138 @@ class HealthKitReader: ObservableObject {
             }
             store.execute(q)
         }
+        // Dedup overlapping workouts from different sources (Apple Watch + Strava etc.).
+        // Skip transitions <3 min.
+        let deduped = Self.dedupOverlapping(hkWorkouts.filter { $0.duration / 60 >= 3 })
         var results: [WorkoutHealthData] = []
-        for wkt in hkWorkouts {
+        for wkt in deduped {
             let data = await healthData(from: wkt, sport: sport)
             results.append(data)
         }
         return results
+    }
+
+    /// Cluster overlapping workouts (>50% time overlap) and keep one per cluster.
+    /// Preference: Apple-native source bundleId, then longest duration, then most data fields.
+    static func dedupOverlapping(_ workouts: [HKWorkout]) -> [HKWorkout] {
+        // Sort by start time ascending for stable clustering
+        let sorted = workouts.sorted { $0.startDate < $1.startDate }
+        var clusters: [[HKWorkout]] = []
+        for w in sorted {
+            if let lastIdx = clusters.indices.last,
+               clusters[lastIdx].contains(where: { significantlyOverlap($0, w) }) {
+                clusters[lastIdx].append(w)
+            } else {
+                clusters.append([w])
+            }
+        }
+        return clusters.map { cluster in
+            cluster.max(by: { Self.priorityScore($0) < Self.priorityScore($1) }) ?? cluster[0]
+        }.sorted { $0.startDate < $1.startDate }
+    }
+
+    private static func significantlyOverlap(_ a: HKWorkout, _ b: HKWorkout) -> Bool {
+        let start = max(a.startDate, b.startDate)
+        let end = min(a.endDate, b.endDate)
+        let overlap = end.timeIntervalSince(start)
+        guard overlap > 0 else { return false }
+        let aDur = a.endDate.timeIntervalSince(a.startDate)
+        let bDur = b.endDate.timeIntervalSince(b.startDate)
+        return overlap > 0.5 * min(aDur, bDur)
+    }
+
+    /// Higher score = preferred. Apple-native source wins, then duration, then data richness.
+    private static func priorityScore(_ w: HKWorkout) -> Double {
+        let bid = w.sourceRevision.source.bundleIdentifier.lowercased()
+        let isAppleNative = bid.hasPrefix("com.apple.")
+        var s: Double = 0
+        if isAppleNative { s += 1_000_000 }
+        s += w.duration                          // longer is better
+        if w.totalDistance != nil       { s += 100 }
+        if w.totalEnergyBurned != nil   { s += 50 }
+        s += Double(w.workoutActivities.count) * 10
+        return s
+    }
+
+    // MARK: - All HKWorkouts on a day (any sport)
+
+    /// Returns ALL HKWorkouts started on the given local-day, mapped to our sport keys.
+    /// Used to surface Apple Fitness/Watch sessions in the "factual" picture, even
+    /// when they don't match a planned workout.
+    func loggedWorkouts(on date: Date) async -> [LoggedWorkout] {
+        let cal = Calendar.current
+        let dayStart = cal.startOfDay(for: date)
+        let dayEnd = dayStart.addingTimeInterval(86400)
+        let pred = HKQuery.predicateForSamples(withStart: dayStart, end: dayEnd)
+        let sort = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)
+
+        let hkWorkoutsRaw: [HKWorkout] = await withCheckedContinuation { cont in
+            let q = HKSampleQuery(sampleType: .workoutType(), predicate: pred,
+                                   limit: 50, sortDescriptors: [sort]) { _, samples, _ in
+                cont.resume(returning: (samples as? [HKWorkout]) ?? [])
+            }
+            store.execute(q)
+        }
+        // Dedup duplicates from third-party apps that mirror Apple Watch sessions.
+        let hkWorkouts = Self.dedupOverlapping(hkWorkoutsRaw.filter { $0.duration / 60 >= 3 })
+
+        let dateFmt = DateFormatter()
+        dateFmt.locale = Locale(identifier: "en_US_POSIX")
+        dateFmt.dateFormat = "yyyy-MM-dd"
+        let isoFmt = ISO8601DateFormatter()
+        isoFmt.formatOptions = [.withInternetDateTime]
+
+        var results: [LoggedWorkout] = []
+        for wkt in hkWorkouts {
+            let durationMin = (wkt.duration / 60 * 10).rounded() / 10
+            guard durationMin >= 3 else { continue }   // safety
+
+            let sport = Self.sportKey(for: wkt.workoutActivityType)
+            let (avgHR, maxHR) = await hrStats(from: wkt.startDate, to: wkt.endDate)
+            let distType = distanceType(for: sport)
+            var distanceM: Double? = nil
+            if let dt = distType {
+                distanceM = await statSum(type: dt, from: wkt.startDate, to: wkt.endDate, unit: .meter())
+            }
+            var calories: Int? = nil
+            if let c = await statSum(type: HKQuantityType(.activeEnergyBurned),
+                                      from: wkt.startDate, to: wkt.endDate, unit: .kilocalorie()) {
+                calories = Int(c.rounded())
+            }
+
+            results.append(LoggedWorkout(
+                sport: sport,
+                date: dateFmt.string(from: wkt.startDate),
+                startTimeISO: isoFmt.string(from: wkt.startDate),
+                durationMin: durationMin,
+                avgHR: avgHR,
+                maxHR: maxHR,
+                distanceM: distanceM,
+                calories: calories,
+                sourceName: wkt.sourceRevision.source.name
+            ))
+        }
+        return results
+    }
+
+    static func sportKey(for type: HKWorkoutActivityType) -> String {
+        switch type {
+        case .running:                              return "run"
+        case .cycling:                              return "bike"
+        case .swimming:                             return "swim"
+        case .traditionalStrengthTraining,
+             .functionalStrengthTraining:           return "strength"
+        case .coreTraining:                         return "core"
+        case .flexibility, .yoga,
+             .pilates, .mindAndBody:                return "mobility"
+        case .walking, .hiking:                     return "walk"
+        case .rowing:                               return "rowing"
+        case .elliptical:                           return "elliptical"
+        case .stairs, .stairClimbing,
+             .stepTraining:                         return "stairs"
+        case .highIntensityIntervalTraining:        return "hiit"
+        default:                                    return "other"
+        }
     }
 
     // MARK: - HRV

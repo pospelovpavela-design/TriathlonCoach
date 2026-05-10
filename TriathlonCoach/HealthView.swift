@@ -7,6 +7,7 @@ struct HealthView: View {
     @EnvironmentObject var healthReader: HealthKitReader
 
     @State private var selectedDayKey: HealthDayKey?
+    @State private var isRefreshingLogged = false
 
     private var recentDayKeys: [String] {
         let fmt = DateFormatter()
@@ -44,21 +45,56 @@ struct HealthView: View {
             HealthDaySheet(
                 entry: store.healthEntryOrNil(for: key.id) ?? HealthDayEntry(date: key.id),
                 dayWorkouts: store.workouts(forDay: date),
-                weeklyWorkouts: store.workouts(forLast7DaysEndingOn: date)
+                weeklyWorkouts: store.workouts(forLast7DaysEndingOn: date),
+                dayLogged: store.loggedWorkouts(forDay: date),
+                weeklyLogged: store.loggedWorkouts(forLast7DaysEndingOn: date)
             ) { updated in
                 store.updateHealthEntry(updated)
             }
         }
+        .task {
+            await store.refreshLoggedWorkouts(daysBack: 13, healthReader: healthReader)
+        }
     }
 
     private var header: some View {
-        HStack {
+        HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 2) {
                 Text("ЗДОРОВЬЕ").font(.system(size: 11, weight: .semibold))
                     .foregroundColor(.white.opacity(0.4)).tracking(4)
                 Text("Мониторинг и анализ").font(.system(size: 20, weight: .black)).foregroundColor(.white)
+                let count = store.loggedWorkouts.count
+                HStack(spacing: 6) {
+                    Image(systemName: "applewatch")
+                        .font(.system(size: 10)).foregroundColor(.cyan.opacity(0.8))
+                    Text(count == 0
+                        ? "Apple Health: нет загруженных тренировок"
+                        : "Apple Health: \(count) трен. за 14 дней")
+                        .font(.system(size: 11)).foregroundColor(.white.opacity(0.5))
+                }
+                .padding(.top, 2)
             }
             Spacer()
+            Button(action: {
+                Task {
+                    isRefreshingLogged = true
+                    await store.refreshLoggedWorkouts(daysBack: 13, healthReader: healthReader)
+                    isRefreshingLogged = false
+                }
+            }) {
+                if isRefreshingLogged {
+                    ProgressView().tint(.cyan).scaleEffect(0.8)
+                        .frame(width: 32, height: 32)
+                } else {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.cyan)
+                        .frame(width: 32, height: 32)
+                        .background(Color.cyan.opacity(0.12))
+                        .clipShape(Circle())
+                }
+            }
+            .disabled(isRefreshingLogged)
         }
         .padding(.horizontal, 16).padding(.top, 16).padding(.bottom, 8)
     }
@@ -238,6 +274,8 @@ struct HealthDaySheet: View {
     @State var entry: HealthDayEntry
     let dayWorkouts: [WorkoutPlanJSON]
     let weeklyWorkouts: [WorkoutPlanJSON]
+    let dayLogged: [LoggedWorkout]
+    let weeklyLogged: [LoggedWorkout]
     let onSave: (HealthDayEntry) -> Void
 
     @Environment(\.dismiss) var dismiss
@@ -707,14 +745,24 @@ struct HealthDaySheet: View {
 
     // MARK: - Today's Workouts
 
+    private var unmatchedLoggedWorkouts: [LoggedWorkout] {
+        let completedSports = Set(dayWorkouts
+            .filter { $0.completed }
+            .map { HealthService.canonicalSport($0.sport) })
+        return dayLogged.filter { !completedSports.contains(HealthService.canonicalSport($0.sport)) }
+    }
+
     @ViewBuilder
     private var todayWorkoutsSection: some View {
-        if !dayWorkouts.isEmpty {
+        if !dayWorkouts.isEmpty || !unmatchedLoggedWorkouts.isEmpty {
             VStack(alignment: .leading, spacing: 12) {
                 sectionHeader("Тренировки сегодня")
                 VStack(spacing: 10) {
                     ForEach(dayWorkouts) { w in
                         todayWorkoutRow(w)
+                    }
+                    ForEach(unmatchedLoggedWorkouts) { lw in
+                        loggedWorkoutRow(lw)
                     }
                 }
                 .padding(14)
@@ -722,6 +770,43 @@ struct HealthDaySheet: View {
                 .clipShape(RoundedRectangle(cornerRadius: 12))
                 .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.08), lineWidth: 1))
             }
+        }
+    }
+
+    private func loggedWorkoutRow(_ lw: LoggedWorkout) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "applewatch.radiowaves.left.and.right")
+                .font(.system(size: 13))
+                .foregroundColor(.cyan.opacity(0.85))
+                .frame(width: 18)
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 6) {
+                    Text(ReportBuilder.sportEmoji(lw.sport)).font(.system(size: 12))
+                    Text(ReportBuilder.sportName(lw.sport))
+                        .font(.system(size: 13, weight: .semibold)).foregroundColor(.white)
+                    Text("Apple Health")
+                        .font(.system(size: 9, weight: .black))
+                        .foregroundColor(.cyan)
+                        .tracking(1)
+                        .padding(.horizontal, 5).padding(.vertical, 2)
+                        .background(Color.cyan.opacity(0.13))
+                        .clipShape(RoundedRectangle(cornerRadius: 3))
+                }
+                HStack(spacing: 6) {
+                    chipMini("\(Int(lw.durationMin.rounded())) мин", .blue)
+                    if let hr = lw.avgHR { chipMini("♥ \(hr)", .red) }
+                    if let s = lw.distanceString { chipMini(s, .cyan) }
+                    if let cal = lw.calories { chipMini("\(cal) ккал", .orange) }
+                    if !lw.startTimeLabel.isEmpty {
+                        Text(lw.startTimeLabel)
+                            .font(.system(size: 10)).foregroundColor(.white.opacity(0.4))
+                    }
+                }
+                if let src = lw.sourceName {
+                    Text(src).font(.system(size: 10)).foregroundColor(.white.opacity(0.35))
+                }
+            }
+            Spacer(minLength: 0)
         }
     }
 
@@ -794,8 +879,8 @@ struct HealthDaySheet: View {
 
     @ViewBuilder
     private var weeklyLoadSection: some View {
-        if !weeklyWorkouts.isEmpty {
-            let s = HealthService.weekLoadSummary(weeklyWorkouts)
+        if !weeklyWorkouts.isEmpty || !weeklyLogged.isEmpty {
+            let s = HealthService.weekLoadSummary(weeklyWorkouts, loggedWorkouts: weeklyLogged)
             VStack(alignment: .leading, spacing: 12) {
                 sectionHeader("Нагрузка · 7 дней")
                 VStack(alignment: .leading, spacing: 12) {
@@ -1122,7 +1207,9 @@ struct HealthDaySheet: View {
             profile: store.profile,
             coaching: store.coaching,
             dayWorkouts: dayWorkouts,
-            weeklyWorkouts: weeklyWorkouts
+            weeklyWorkouts: weeklyWorkouts,
+            dayLogged: dayLogged,
+            weeklyLogged: weeklyLogged
         )
         UIPasteboard.general.string = prompt
         withAnimation { promptCopied = true }

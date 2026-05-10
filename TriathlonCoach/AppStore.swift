@@ -27,6 +27,7 @@ class AppStore: ObservableObject {
 
     @Published var workouts: [WorkoutPlanJSON] = []
     @Published var healthEntries: [HealthDayEntry] = []
+    @Published var loggedWorkouts: [LoggedWorkout] = []
     @Published var profile: AthleteProfile = AthleteProfile()
     @Published var coaching: CoachingProfile = CoachingProfile()
     @Published var pendingPrompt: String = ""
@@ -40,12 +41,17 @@ class AppStore: ObservableObject {
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         return docs.appendingPathComponent("health_entries.json")
     }
+    private var loggedWorkoutsFileURL: URL {
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        return docs.appendingPathComponent("logged_workouts.json")
+    }
 
     init() {
         loadProfile()
         loadCoaching()
         loadWorkouts()
         loadHealthEntries()
+        loadLoggedWorkouts()
     }
 
     // MARK: - Persistence
@@ -193,6 +199,61 @@ class AppStore: ObservableObject {
         return workouts.filter { $0.date >= s && $0.date <= e }.sorted { $0.date < $1.date }
     }
 
+    // MARK: - Logged workouts (HKWorkout from Apple Health)
+
+    func loggedWorkouts(forDay date: Date) -> [LoggedWorkout] {
+        let key = dateFormatter.string(from: date)
+        return loggedWorkouts.filter { $0.date == key }.sorted { $0.startTimeISO < $1.startTimeISO }
+    }
+
+    func loggedWorkouts(forLast7DaysEndingOn date: Date) -> [LoggedWorkout] {
+        let cal = Calendar.current
+        guard let start = cal.date(byAdding: .day, value: -6, to: date) else { return [] }
+        let s = dateFormatter.string(from: start)
+        let e = dateFormatter.string(from: date)
+        return loggedWorkouts.filter { $0.date >= s && $0.date <= e }
+            .sorted { $0.startTimeISO < $1.startTimeISO }
+    }
+
+    /// Re-fetch HKWorkouts for the last `daysBack+1` days and merge into store.
+    /// Replaces entries by `startTimeISO` so re-fetch is idempotent.
+    /// Awaits HealthKit authorization first to avoid race on app launch.
+    @MainActor
+    func refreshLoggedWorkouts(daysBack: Int = 13, healthReader: HealthKitReader) async {
+        if !healthReader.isAuthorized {
+            await healthReader.requestAuthorization()
+        }
+        let cal = Calendar.current
+        let today = Date()
+        var fetched: [LoggedWorkout] = []
+        for i in 0...daysBack {
+            guard let day = cal.date(byAdding: .day, value: -i, to: today) else { continue }
+            let dayWorkouts = await healthReader.loggedWorkouts(on: day)
+            fetched.append(contentsOf: dayWorkouts)
+        }
+        // Merge: replace by startTimeISO. Keep older entries outside the refreshed window.
+        guard let windowStart = cal.date(byAdding: .day, value: -daysBack, to: today) else { return }
+        let windowStartKey = dateFormatter.string(from: windowStart)
+        var byKey: [String: LoggedWorkout] = [:]
+        for w in self.loggedWorkouts where w.date < windowStartKey {
+            byKey[w.startTimeISO] = w
+        }
+        for w in fetched { byKey[w.startTimeISO] = w }
+        self.loggedWorkouts = Array(byKey.values).sorted { $0.startTimeISO < $1.startTimeISO }
+        saveLoggedWorkouts()
+    }
+
+    private func saveLoggedWorkouts() {
+        guard let data = try? JSONEncoder().encode(loggedWorkouts) else { return }
+        try? data.write(to: loggedWorkoutsFileURL, options: .atomic)
+    }
+
+    private func loadLoggedWorkouts() {
+        guard let data = try? Data(contentsOf: loggedWorkoutsFileURL),
+              let loaded = try? JSONDecoder().decode([LoggedWorkout].self, from: data) else { return }
+        loggedWorkouts = loaded
+    }
+
     private var dateFormatter: DateFormatter {
         let f = DateFormatter()
         f.dateFormat = "yyyy-MM-dd"
@@ -203,9 +264,14 @@ class AppStore: ObservableObject {
 
     func weekSummaryText(forWeek date: Date) -> String {
         let week = workouts(forWeek: date)
-        guard !week.isEmpty else { return "Нет тренировок за эту неделю." }
+        let (mon, sun) = weekBounds(containing: date)
+        let isoFmt = dateFormatter
+        let monKey = isoFmt.string(from: mon)
+        let sunKey = isoFmt.string(from: sun)
+        let weekLogged = loggedWorkouts.filter { $0.date >= monKey && $0.date <= sunKey }
 
-        let (mon, _) = weekBounds(containing: date)
+        guard !week.isEmpty || !weekLogged.isEmpty else { return "Нет тренировок за эту неделю." }
+
         let fmt = DateFormatter()
         fmt.dateFormat = "d MMM"
         fmt.locale = Locale(identifier: "ru_RU")
@@ -221,11 +287,29 @@ class AppStore: ObservableObject {
         }
 
         let trainable = week.filter { $0.sport != "rest" }
-        let done = trainable.filter { $0.completed }.count
-        let totalPlanned = trainable.reduce(0) { $0 + $1.duration_min }
-        let totalActual = week.compactMap { $0.actual_duration_min }.reduce(0, +)
+        let completedKeys = Set(trainable.filter { $0.completed }.map {
+            "\($0.date)|\(HealthService.canonicalSport($0.sport))"
+        })
+        let extraLogged = weekLogged.filter {
+            !completedKeys.contains("\($0.date)|\(HealthService.canonicalSport($0.sport))")
+        }
+        if !extraLogged.isEmpty {
+            lines.append("\nИз Apple Health (без плана):")
+            for lw in extraLogged {
+                var detail = "\(Int(lw.durationMin.rounded())) мин"
+                if let hr = lw.avgHR { detail += ", ♥ \(hr)" }
+                if let d = lw.distanceString { detail += ", \(d)" }
+                lines.append("⌚ \(lw.date) [\(lw.sport.uppercased())] \(ReportBuilder.sportName(lw.sport)) — \(detail)")
+            }
+        }
 
-        lines.append("\nВыполнено: \(done)/\(trainable.count) тренировок")
+        let done = trainable.filter { $0.completed }.count + extraLogged.count
+        let totalPlanned = trainable.reduce(0) { $0 + $1.duration_min }
+        let totalActualPlanned = week.compactMap { $0.actual_duration_min }.reduce(0, +)
+        let totalActualLogged = Int(extraLogged.reduce(0.0) { $0 + $1.durationMin }.rounded())
+        let totalActual = totalActualPlanned + totalActualLogged
+
+        lines.append("\nВыполнено: \(done) тренировок (\(trainable.filter { $0.completed }.count) по плану + \(extraLogged.count) из Apple Health)")
         lines.append("Объём: план \(totalPlanned) мин, факт \(totalActual) мин")
         lines.append("\n\(profile.claudeContext)")
         return lines.joined(separator: "\n")
