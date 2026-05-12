@@ -112,7 +112,8 @@ class WorkoutKitManager: ObservableObject {
             blocks: [block]
         )
         let plan = WorkoutPlan(.custom(customWorkout))
-        let dateComponents = Calendar.current.dateComponents([.year, .month, .day], from: Date())
+        let scheduledDate = workout.parsedDate ?? Date()
+        let dateComponents = Calendar.current.dateComponents([.year, .month, .day], from: scheduledDate)
         await WorkoutScheduler.shared.schedule(plan, at: dateComponents)
 
         let scheduled = await WorkoutScheduler.shared.scheduledWorkouts

@@ -33,6 +33,10 @@ struct ReportBuilder {
             let pct = Int(Double(actual) / Double(plannedMin) * 100)
             let sign = diff >= 0 ? "+" : ""
             L.append("Длительность факт: \(actual) мин (\(sign)\(diff) мин, \(pct)% от плана)")
+            if let extra = w.extraMinutesAfterPlannedTarget {
+                let target = w.plannedIntervalMinutes > 0 ? w.plannedIntervalMinutes : plannedMin
+                L.append("Разбор длительности: целевой блок \(target) мин; дополнительно \(extra) мин после цели. Не считать эти \(extra) мин превышением интервального задания без подтверждения по пульсу/сегментам/заметкам.")
+            }
         }
 
         let zone = HRZone.zone(for: w.target_zone)
@@ -281,9 +285,8 @@ struct ReportBuilder {
                     L.append("")
                     L.append("\(label)  [\(sportEmoji(w.sport)) \(sportName(w.sport).uppercased())]  \(w.completed ? "✅" : "⬜")")
                     L.append("  Название: \(w.title)")
-                    var dur = "  Длит.: план \(w.duration_min) мин"
-                    if let a = w.actual_duration_min { dur += " / факт \(a) мин" }
-                    L.append(dur)
+                    L.append("  Длит.: \(w.actualSummaryForPrompt)")
+                    L.append(contentsOf: w.actualDetailLinesForPrompt)
                     var hr = "  Пульс: цель \(w.target_zone)"
                     if let h = w.actual_avg_hr { hr += " / ср. факт \(h) уд/мин" }
                     if let mx = w.actual_max_hr { hr += " / макс \(mx) уд/мин" }
@@ -493,6 +496,10 @@ struct ReportBuilder {
                         if let p = iv.paceString { line += " \(p)" }
                         else if let s = iv.speedString { line += " \(s)" }
                         L.append(line)
+                    }
+                    if let extra = w.extraMinutesAfterPlannedTarget {
+                        let target = w.plannedIntervalMinutes > 0 ? w.plannedIntervalMinutes : w.duration_min
+                        L.append("Разбор длительности: целевой блок \(target) мин; дополнительно \(extra) мин после цели, вероятно заминка/ходьба/растяжка.")
                     }
                 }
                 if !w.notes_after.isEmpty { L.append("Заметки: \(w.notes_after)") }

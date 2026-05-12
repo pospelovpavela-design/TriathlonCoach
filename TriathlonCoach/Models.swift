@@ -69,19 +69,19 @@ struct ActualInterval: Codable {
     var max_hr: Int?
     var distance_m: Double?
 
-    var pace_sec_per_km: Double? {
+    nonisolated var pace_sec_per_km: Double? {
         guard let d = distance_m, d > 0 else { return nil }
         return (duration_min * 60) / (d / 1000)
     }
-    var speed_kmh: Double? {
+    nonisolated var speed_kmh: Double? {
         guard let d = distance_m, duration_min > 0 else { return nil }
         return (d / 1000) / (duration_min / 60)
     }
-    var paceString: String? {
+    nonisolated var paceString: String? {
         guard let p = pace_sec_per_km else { return nil }
         return String(format: "%d:%02d /км", Int(p) / 60, Int(p) % 60)
     }
-    var speedString: String? {
+    nonisolated var speedString: String? {
         guard let s = speed_kmh else { return nil }
         return String(format: "%.1f км/ч", s)
     }
@@ -304,6 +304,63 @@ extension WorkoutPlanJSON {
     }
 
     var stableKey: String { title + date }
+
+    nonisolated var plannedIntervalMinutes: Int {
+        intervals.reduce(0) { $0 + $1.duration_min }
+    }
+
+    nonisolated var actualIntervalMinutes: Double? {
+        guard let actualIntervals = actual_intervals, !actualIntervals.isEmpty else { return nil }
+        return actualIntervals.reduce(0.0) { $0 + $1.duration_min }
+    }
+
+    nonisolated var extraMinutesAfterPlannedTarget: Int? {
+        guard let actual = actual_duration_min else { return nil }
+        let target = plannedIntervalMinutes > 0 ? plannedIntervalMinutes : duration_min
+        let extra = actual - target
+        return extra > 0 ? extra : nil
+    }
+
+    nonisolated var actualSummaryForPrompt: String {
+        var parts: [String] = []
+        if let actual = actual_duration_min {
+            parts.append("факт всего \(actual) мин")
+            parts.append("плановая цель \(duration_min) мин")
+        } else {
+            parts.append("план \(duration_min) мин")
+        }
+        if plannedIntervalMinutes > 0 && plannedIntervalMinutes != duration_min {
+            parts.append("интервалы по плану \(plannedIntervalMinutes) мин")
+        }
+        if let actualIntervals = actualIntervalMinutes {
+            parts.append(String(format: "сегменты Apple Fitness %.1f мин", actualIntervals))
+        }
+        if let extra = extraMinutesAfterPlannedTarget {
+            parts.append("+\(extra) мин сверх плановой цели: считать отдельной заминкой/ходьбой/растяжкой, если это подтверждается пульсом, интервалами или заметками")
+        }
+        return parts.joined(separator: ", ")
+    }
+
+    nonisolated var actualDetailLinesForPrompt: [String] {
+        var lines: [String] = []
+        if let extra = extraMinutesAfterPlannedTarget {
+            let target = plannedIntervalMinutes > 0 ? plannedIntervalMinutes : duration_min
+            lines.append("   разбор длительности: целевой блок \(target) мин; дополнительно \(extra) мин после цели. Не трактуй эти \(extra) мин как превышение интенсивного задания без подтверждения по пульсу/интервалам.")
+        }
+        if let actualIntervals = actual_intervals, !actualIntervals.isEmpty {
+            let details = actualIntervals.prefix(8).map { iv -> String in
+                var line = "\(iv.number): \(String(format: "%.1f", iv.duration_min))м"
+                if let hr = iv.avg_hr { line += " срЧСС \(hr)" }
+                if let max = iv.max_hr { line += "/макс \(max)" }
+                if let pace = iv.paceString { line += " \(pace)" }
+                else if let speed = iv.speedString { line += " \(speed)" }
+                return line
+            }.joined(separator: "; ")
+            let suffix = actualIntervals.count > 8 ? "; ..." : ""
+            lines.append("   сегменты Apple Fitness: \(details)\(suffix)")
+        }
+        return lines
+    }
 
     var isToday: Bool {
         guard let d = parsedDate else { return false }

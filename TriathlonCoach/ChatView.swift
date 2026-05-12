@@ -257,6 +257,9 @@ struct ChatView: View {
 
     private var autoPrompt: String {
         let today = Date()
+        let calendar = Calendar.current
+        let yesterday = calendar.date(byAdding: .day, value: -1, to: today) ?? today
+        let tomorrow = calendar.date(byAdding: .day, value: 1, to: today) ?? today
         let todayKey = isoKey(today)
         let healthEntry = store.healthEntryOrNil(for: todayKey)
         let readiness = healthEntry.flatMap { entry -> HealthService.LocalReadiness? in
@@ -268,8 +271,12 @@ struct ChatView: View {
             return r.components.isEmpty ? nil : r
         }
         let todayWorkouts = selectedRequest == .today ? store.workouts(forDay: today) : []
+        let yesterdayWorkouts = selectedRequest == .today ? store.workouts(forDay: yesterday) : []
+        let tomorrowWorkouts = selectedRequest == .today ? store.workouts(forDay: tomorrow) : []
         let weeklyWorkouts = store.workouts(forLast7DaysEndingOn: today)
         let todayLogged = selectedRequest == .today ? store.loggedWorkouts(forDay: today) : []
+        let yesterdayLogged = selectedRequest == .today ? store.loggedWorkouts(forDay: yesterday) : []
+        let tomorrowLogged = selectedRequest == .today ? store.loggedWorkouts(forDay: tomorrow) : []
         let weeklyLogged = store.loggedWorkouts(forLast7DaysEndingOn: today)
 
         return ClaudeService.buildCopyablePrompt(
@@ -279,8 +286,12 @@ struct ChatView: View {
             healthEntry: healthEntry,
             readiness: readiness,
             todayWorkouts: todayWorkouts,
+            yesterdayWorkouts: yesterdayWorkouts,
+            tomorrowWorkouts: tomorrowWorkouts,
             weeklyWorkouts: weeklyWorkouts,
             todayLogged: todayLogged,
+            yesterdayLogged: yesterdayLogged,
+            tomorrowLogged: tomorrowLogged,
             weeklyLogged: weeklyLogged,
             preferences: todayPreferences
         )
@@ -292,6 +303,7 @@ struct ChatView: View {
             let dayLabel = todayDateString()
             return """
             Сегодня \(dayLabel). Оцени готовность атлета и **скорректируй сегодняшний план** под состояние организма. \
+            Обязательно учитывай: факт вчерашней тренировки, место сегодняшнего дня в целевом плане и плановую нагрузку завтра. \
             Если нужно — измени интенсивность, сократи объём, замени тип тренировки или предложи отдых. \
             В JSON верни итоговый набор тренировок на сегодня (после твоей коррекции): сохранённые без изменений + изменённые с обновлёнными полями + новые. \
             Поле title и date изменённой тренировки должны совпадать с исходными — это позволит приложению заменить её. Если предлагаешь отдых вместо тренировки — пришли запись с sport=\"rest\". \

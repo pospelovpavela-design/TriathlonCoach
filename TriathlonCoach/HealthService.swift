@@ -27,6 +27,9 @@ struct HealthService {
         lines.append("## Состояние здоровья атлета")
         lines.append("**Дата:** \(entry.formattedDate)")
         lines.append("**Атлет:** \(profile.name), макс. ЧСС \(profile.maxHR) уд/мин, пульс покоя \(profile.restingHR) уд/мин")
+        if let lthr = profile.lactateThresholdHR {
+            lines.append("**ПАНО/LTHR:** \(lthr) уд/мин; зоны от ПАНО: \(profile.thresholdZoneSummary())")
+        }
         if !profile.notes.isEmpty { lines.append("**О себе:** \(profile.notes)") }
         lines.append("")
 
@@ -121,12 +124,7 @@ struct HealthService {
             if !dayCompleted.isEmpty {
                 lines.append("**Выполнены:**")
                 for w in dayCompleted {
-                    var parts: [String] = []
-                    if let a = w.actual_duration_min {
-                        parts.append("\(a) мин (план \(w.duration_min))")
-                    } else {
-                        parts.append("\(w.duration_min) мин (план)")
-                    }
+                    var parts: [String] = [w.actualSummaryForPrompt]
                     if let hr = w.actual_avg_hr {
                         var s = "ср. ЧСС \(hr)"
                         if let mx = w.actual_max_hr { s += "/макс \(mx)" }
@@ -142,6 +140,7 @@ struct HealthService {
                     }
                     if let cal = w.actual_calories { parts.append("\(cal) ккал") }
                     lines.append("• \(ReportBuilder.sportEmoji(w.sport)) ✅ \(w.title), зона \(w.target_zone) — \(parts.joined(separator: ", "))")
+                    lines.append(contentsOf: w.actualDetailLinesForPrompt)
                     if !w.notes_after.isEmpty {
                         lines.append("   Заметки: \(w.notes_after)")
                     }

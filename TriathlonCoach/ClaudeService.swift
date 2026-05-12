@@ -23,8 +23,12 @@ actor ClaudeService {
         healthEntry: HealthDayEntry? = nil,
         readiness: HealthService.LocalReadiness? = nil,
         todayWorkouts: [WorkoutPlanJSON] = [],
+        yesterdayWorkouts: [WorkoutPlanJSON] = [],
+        tomorrowWorkouts: [WorkoutPlanJSON] = [],
         weeklyWorkouts: [WorkoutPlanJSON] = [],
         todayLogged: [LoggedWorkout] = [],
+        yesterdayLogged: [LoggedWorkout] = [],
+        tomorrowLogged: [LoggedWorkout] = [],
         weeklyLogged: [LoggedWorkout] = [],
         preferences: String = ""
     ) -> String {
@@ -106,6 +110,18 @@ actor ClaudeService {
             lines.append("")
         }
 
+        if !yesterdayWorkouts.isEmpty || !yesterdayLogged.isEmpty {
+            lines.append("## Вчера — факт тренировки")
+            appendWorkoutContext(
+                to: &lines,
+                workouts: yesterdayWorkouts,
+                logged: yesterdayLogged,
+                includePending: false,
+                emptyLoggedTitle: "**Из Apple Health (без плана):**"
+            )
+            lines.append("")
+        }
+
         if !weeklyWorkouts.isEmpty || !weeklyLogged.isEmpty {
             let s = HealthService.weekLoadSummary(weeklyWorkouts, loggedWorkouts: weeklyLogged)
             lines.append("## Тренировочная нагрузка — последние 7 дней")
@@ -128,53 +144,26 @@ actor ClaudeService {
 
         if !todayWorkouts.isEmpty || !todayLogged.isEmpty {
             lines.append("## Сегодня — план и факт")
-            for w in todayWorkouts {
-                let mark = w.completed ? "✅" : (w.sport == "rest" ? "😴" : "⬜")
-                var line = "• \(ReportBuilder.sportEmoji(w.sport)) \(mark) \(w.title) — план \(w.duration_min) мин, цель \(w.target_zone)"
-                if let rpe = w.rpe_target { line += ", RPE \(rpe)/10" }
-                lines.append(line)
-                if w.completed {
-                    var f: [String] = []
-                    if let a = w.actual_duration_min { f.append("\(a) мин факт") }
-                    if let hr = w.actual_avg_hr {
-                        var s = "ср. ЧСС \(hr)"
-                        if let mx = w.actual_max_hr { s += "/макс \(mx)" }
-                        f.append(s)
-                    }
-                    if let d = w.actual_distance_m, d > 0 {
-                        f.append(d >= 1000 ? String(format: "%.2f км", d / 1000) : String(format: "%.0f м", d))
-                    }
-                    if let rpe = w.rpe_actual { f.append("RPE \(rpe)/10") }
-                    if let cal = w.actual_calories { f.append("\(cal) ккал") }
-                    if !f.isEmpty { lines.append("   факт: \(f.joined(separator: ", "))") }
-                    if !w.notes_after.isEmpty { lines.append("   заметки: \(w.notes_after)") }
-                }
-                if !w.intervals.isEmpty {
-                    let ints = w.intervals.map { "\($0.duration_min)м\($0.zone)" }.joined(separator: " → ")
-                    lines.append("   интервалы: \(ints)")
-                }
-            }
+            appendWorkoutContext(
+                to: &lines,
+                workouts: todayWorkouts,
+                logged: todayLogged,
+                includePending: true,
+                emptyLoggedTitle: "**Из Apple Health (без плана):**"
+            )
+            lines.append("")
+        }
 
-            // Unmatched HK workouts on the day
-            let completedSports = Set(todayWorkouts.filter { $0.completed }.map { HealthService.canonicalSport($0.sport) })
-            let extraLogged = todayLogged.filter { !completedSports.contains(HealthService.canonicalSport($0.sport)) }
-            if !extraLogged.isEmpty {
-                lines.append("**Из Apple Health (без плана):**")
-                for lw in extraLogged {
-                    var parts: [String] = []
-                    parts.append("\(Int(lw.durationMin.rounded())) мин")
-                    if let hr = lw.avgHR {
-                        var s = "ср. ЧСС \(hr)"
-                        if let mx = lw.maxHR { s += "/макс \(mx)" }
-                        parts.append(s)
-                    }
-                    if let s = lw.distanceString { parts.append(s) }
-                    if let cal = lw.calories { parts.append("\(cal) ккал") }
-                    if !lw.startTimeLabel.isEmpty { parts.append(lw.startTimeLabel) }
-                    if let src = lw.sourceName { parts.append("источник: \(src)") }
-                    lines.append("• \(ReportBuilder.sportEmoji(lw.sport)) 🟦 \(ReportBuilder.sportName(lw.sport)) — \(parts.joined(separator: ", "))")
-                }
-            }
+        if !tomorrowWorkouts.isEmpty || !tomorrowLogged.isEmpty {
+            lines.append("## Завтра — плановый контекст")
+            appendWorkoutContext(
+                to: &lines,
+                workouts: tomorrowWorkouts,
+                logged: tomorrowLogged,
+                includePending: true,
+                emptyLoggedTitle: "**Apple Health на завтра (если есть):**"
+            )
+            lines.append("Используй завтрашний план как ограничение: сегодняшняя коррекция должна помогать целевому плану, а не ломать нагрузку завтра.")
             lines.append("")
         }
 
@@ -224,6 +213,68 @@ actor ClaudeService {
         lines.append("Отвечай на русском языке.")
 
         return lines.joined(separator: "\n")
+    }
+
+    private static func appendWorkoutContext(
+        to lines: inout [String],
+        workouts: [WorkoutPlanJSON],
+        logged: [LoggedWorkout],
+        includePending: Bool,
+        emptyLoggedTitle: String
+    ) {
+        for w in workouts {
+            if !includePending && !w.completed && w.sport != "rest" { continue }
+
+            let mark = w.completed ? "✅" : (w.sport == "rest" ? "😴" : "⬜")
+            var line = "• \(ReportBuilder.sportEmoji(w.sport)) \(mark) \(w.title) — план \(w.duration_min) мин, цель \(w.target_zone)"
+            if let rpe = w.rpe_target { line += ", RPE \(rpe)/10" }
+            lines.append(line)
+
+            if w.completed {
+                var fact: [String] = [w.actualSummaryForPrompt]
+                if let hr = w.actual_avg_hr {
+                    var s = "ср. ЧСС \(hr)"
+                    if let mx = w.actual_max_hr { s += "/макс \(mx)" }
+                    fact.append(s)
+                }
+                if let d = w.actual_distance_m, d > 0 {
+                    fact.append(d >= 1000 ? String(format: "%.2f км", d / 1000) : String(format: "%.0f м", d))
+                }
+                if let rpe = w.rpe_actual { fact.append("RPE \(rpe)/10") }
+                if let cal = w.actual_calories { fact.append("\(cal) ккал") }
+                lines.append("   факт: \(fact.joined(separator: ", "))")
+                lines.append(contentsOf: w.actualDetailLinesForPrompt)
+                if !w.notes_after.isEmpty { lines.append("   заметки: \(w.notes_after)") }
+            }
+
+            if !w.intervals.isEmpty {
+                let intervals = w.intervals.map { "\($0.duration_min)м\($0.zone)" }.joined(separator: " → ")
+                lines.append("   интервалы: \(intervals)")
+            }
+        }
+
+        let completedSports = Set(workouts.filter { $0.completed }.map { HealthService.canonicalSport($0.sport) })
+        let extraLogged = logged.filter { !completedSports.contains(HealthService.canonicalSport($0.sport)) }
+        if !extraLogged.isEmpty {
+            lines.append(emptyLoggedTitle)
+            for lw in extraLogged {
+                lines.append(loggedWorkoutLine(lw))
+            }
+        }
+    }
+
+    private static func loggedWorkoutLine(_ lw: LoggedWorkout) -> String {
+        var parts: [String] = ["\(Int(lw.durationMin.rounded())) мин"]
+        if let hr = lw.avgHR {
+            var s = "ср. ЧСС \(hr)"
+            if let mx = lw.maxHR { s += "/макс \(mx)" }
+            parts.append(s)
+        }
+        if let s = lw.distanceString { parts.append(s) }
+        if let cal = lw.calories { parts.append("\(cal) ккал") }
+        if !lw.startTimeLabel.isEmpty { parts.append(lw.startTimeLabel) }
+        if let src = lw.sourceName { parts.append("источник: \(src)") }
+        return "• \(ReportBuilder.sportEmoji(lw.sport)) 🟦 \(ReportBuilder.sportName(lw.sport)) — \(parts.joined(separator: ", "))"
     }
 
     // MARK: - JSON extraction

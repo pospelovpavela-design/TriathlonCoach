@@ -10,13 +10,43 @@ struct AthleteProfile: Codable {
     var restingHR: Int = 55
     var weeklyHoursGoal: Double = 8.0
     var notes: String = ""
+    var lactateThresholdHR: Int?
+    var lactateThresholdSport: String?
+    var lactateThresholdTestDate: String?
 
     var claudeContext: String {
         var parts = ["Атлет: \(name)"]
         parts.append("Макс. пульс: \(maxHR) уд/мин, пульс покоя: \(restingHR) уд/мин")
         parts.append("Целевой объём: \(weeklyHoursGoal) ч/нед")
+        if let lthr = lactateThresholdHR {
+            var threshold = "ПАНО/LTHR: \(lthr) уд/мин"
+            if let sport = lactateThresholdSport { threshold += " (\(ReportBuilder.sportName(sport)))" }
+            if let date = lactateThresholdTestDate { threshold += ", тест \(date)" }
+            threshold += ". Зоны от ПАНО: \(thresholdZoneSummary(for: lthr))"
+            parts.append(threshold)
+        }
         if !notes.isEmpty { parts.append("О себе: \(notes)") }
         return parts.joined(separator: ". ")
+    }
+
+    func thresholdZones(for lthr: Int? = nil) -> [(key: String, name: String, range: String)] {
+        guard let value = lthr ?? lactateThresholdHR else { return [] }
+        func bpm(_ pct: Double) -> Int { Int((Double(value) * pct).rounded()) }
+        return [
+            ("Z1", "Восстановление", "до \(bpm(0.84))"),
+            ("Z2", "Аэробная база", "\(bpm(0.85))–\(bpm(0.89))"),
+            ("Z3", "Темпо", "\(bpm(0.90))–\(bpm(0.94))"),
+            ("Z4", "Порог", "\(bpm(0.95))–\(bpm(0.99))"),
+            ("Z5a", "Над порогом", "\(bpm(1.00))–\(bpm(1.02))"),
+            ("Z5b", "VO2max", "\(bpm(1.03))–\(bpm(1.06))"),
+            ("Z5c", "Анаэробная", "от \(bpm(1.07))")
+        ]
+    }
+
+    func thresholdZoneSummary(for lthr: Int? = nil) -> String {
+        thresholdZones(for: lthr)
+            .map { "\($0.key) \($0.range)" }
+            .joined(separator: ", ")
     }
 }
 
@@ -280,9 +310,10 @@ class AppStore: ObservableObject {
         for w in week {
             let status = w.completed ? "✅" : "⬜"
             var detail = "\(w.duration_min) мин план."
-            if let actual = w.actual_duration_min { detail += " / \(actual) мин факт." }
+            if w.completed { detail += " / \(w.actualSummaryForPrompt)." }
             if let hr = w.actual_avg_hr { detail += ", ср. пульс \(hr)" }
             lines.append("\(status) \(w.date) [\(w.sport.uppercased())] \(w.title) — \(detail)")
+            lines.append(contentsOf: w.actualDetailLinesForPrompt)
             if !w.notes_after.isEmpty { lines.append("   Заметки: \(w.notes_after)") }
         }
 

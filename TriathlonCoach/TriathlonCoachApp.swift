@@ -25,9 +25,17 @@ struct TriathlonCoachApp: App {
                     .tabItem { Label("Здоровье", systemImage: "heart.text.square.fill") }
                     .tag(3)
 
+                TargetPlanView()
+                    .tabItem { Label("Цель", systemImage: "flag.checkered") }
+                    .tag(4)
+
+                ThresholdView()
+                    .tabItem { Label("ПАНО", systemImage: "waveform.path.ecg") }
+                    .tag(5)
+
                 SettingsView()
                     .tabItem { Label("Настройки", systemImage: "gear") }
-                    .tag(4)
+                    .tag(6)
             }
             .environmentObject(store)
             .environmentObject(wkManager)
